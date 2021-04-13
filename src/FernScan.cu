@@ -30,8 +30,8 @@ void processBatchKernel(
 	int depth = blockDim.x;
 	int idx = feature_idx[threadIdx.x];
 	uint8_t value, threshold = thresholds[threadIdx.x];
-	for (int x = 0; x < width; x++) {
-		for (int y = 0; y < height; y++) {
+	for (int x = 0; x < width - win_size; x += stride) {
+		for (int y = 0; y < height - win_size; y += stride) {
 			double value = data[blockIdx.x * n_features + y* width + x + (idx / win_size) * width + idx % win_size];
 			temp[threadIdx.x] = threshold < value;
 
@@ -60,6 +60,60 @@ void FernScan::processBatch(device_vector<uint8_t>&data, device_vector<uint32_t>
 
 	processBatchKernel << <batch_size, depth, depth * sizeof(char) >> >
 		(data, labels, feature_idx, thresholds, hist, n_classes, n_features,
+			win_size, stride, image_height, image_width);
+}
+
+__global__
+void transformBatchKernel(
+	uint8_t* data,
+	double* transformed,
+	uint32_t* feature_idx,
+	uint8_t* thresholds,
+	float* hist,
+	int n_classes,
+	int n_features,
+	int win_size,
+	int stride,
+	int height,
+	int width)
+{
+	extern __shared__ char temp[];
+
+	int depth = blockDim.x;
+	int idx = feature_idx[threadIdx.x];
+	int transformed_idx = 0;
+	uint8_t value, threshold = thresholds[threadIdx.x];
+	for (int x = 0; x < width - win_size; x += stride) {
+		for (int y = 0; y < height - win_size; y += stride) {
+			double value = data[blockIdx.x * n_features + y * width + x + (idx / win_size) * width + idx % win_size];
+			temp[threadIdx.x] = threshold < value;
+
+			if (threadIdx.x == blockDim.x - 1) {
+				int count = 0;
+				for (int i = 0; i < depth; i++) count = (count << 1) + temp[i];
+
+				for (int i = 0; i < n_classes; i++, transformed_idx++)
+					transformed[transformed_idx] += hist[(1 << depth) * i + count];
+				//int label = labels[blockIdx.x];
+				//atomicAdd(&hist[label * (1 << depth) + count], 1);
+			}
+			__syncthreads();
+		}
+	}
+
+
+}
+
+void FernScan::transformBatch(device_vector<uint8_t>& data, device_vector<float>& transformed)
+{
+	uint8_t* data = raw_pointer_cast(data.data());
+	float* transformed = raw_pointer_cast(transformed.data());
+	uint32_t* feature_idx = raw_pointer_cast(d_feature_idx.data());
+	uint8_t* thresholds = raw_pointer_cast(d_thresholds.data());
+	float* hist = raw_pointer_cast(d_hist.data());
+
+	transformBatchKernel << <batch_size, depth, depth * sizeof(char) >> >
+		(data, transformed, feature_idx, thresholds, hist, n_classes, n_features,
 			win_size, stride, image_height, image_width);
 }
 

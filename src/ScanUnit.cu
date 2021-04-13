@@ -24,7 +24,7 @@ vector<vector<float>> ScanUnit::transform(const vector<vector<uint8_t>&>& data)
 	for (int i = 0; i < data.size(); i += batch_size) {
 		data_batch = packBatch(data, i);
 
-		for (int j = 0; j < transformed.size(); j++) random_ferns[j].tranformBatch(data_batch, transformed[j]);
+		for (int j = 0; j < transformed.size(); j++) random_ferns[j].transformBatch(data_batch, transformed[j]);
 		//for (int j = 0; j < buffer.size(); j++) out[i + j] = std::move(buffer[j]);
 		cudaDeviceSynchronize();
 
@@ -84,7 +84,15 @@ device_vector<uint8_t> ScanUnit::packBatch(
 
 void ScanUnit::unpackTransformed(vector<vector<float>>& dst, vector<thrust::device_vector<float>>& src, int index)
 {
-	for (int i = 0; i < src.size(); i++) {
-		thrust::copy(src[i].begin(), src[i].end(), dst[index].begin())
+	int transformed_size = src[0].size();
+	vector<float> buffer(src.size() * transformed_size);
+	int sample_step = transformed_size / batch_size;
+	for (int i = 0; i < batch_size; i++) {
+		for (int j = 0; j < src.size(); j++) {
+			thrust::copy(src[j].begin() + sample_step * i,
+				src[j].begin() + sample_step * (i + 1), dst[index + i].begin() + j * sample_step);
+		}
 	}
+
+	for (auto& vec : src) vec.clear();
 }

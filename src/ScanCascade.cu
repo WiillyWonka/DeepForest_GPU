@@ -62,11 +62,11 @@ void ScanCascade::setFeaturesNumber(uint32_t n_features)
 }
 
 
-device_vector<uint8_t> ScanCascade::packBatch(
-	const vector<vector<uint8_t>>& in,
+device_vector<uint32_t> ScanCascade::packBatch(
+	const vector<uint32_t>& in,
 	uint32_t start_idx)
 {
-	device_vector<uint8_t> out(batch_size);
+	device_vector<uint32_t> out(batch_size);
 	thrust::copy(in.begin() + start_idx, in.begin() + start_idx + batch_size, out.begin());
 	return out;
 }

@@ -12,6 +12,7 @@ public:
 	FernScan(int win_size, int stride, int depth = 10);
 
 	void processBatch(thrust::device_vector<uint8_t>& data, thrust::device_vector<uint32_t>& labels);
+	void transformBatch(thrust::device_vector<uint8_t>& data, thrust::device_vector<float>& transformed);
 
 	void moveHost2Device();
 	void releaseDevice();
