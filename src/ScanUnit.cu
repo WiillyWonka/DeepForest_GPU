@@ -3,12 +3,19 @@
 using std::vector;
 using thrust::device_vector;
 
+ScanUnit::ScanUnit(int n_estimators)
+{
+	srand(time(0));
+	random_ferns.reserve(n_estimators);
+	for (int i = 0; i < n_estimators; i++) random_ferns.push_back(RandomFernsScan());
+}
+
 void ScanUnit::processBatch(thrust::device_vector<uint8_t>& data_batch, thrust::device_vector<uint32_t>& label_batch)
 {
 	for (auto& random_fern : random_ferns) random_fern.processBatch(data_batch, label_batch);
 }
 
-vector<vector<float>> ScanUnit::transform(const vector<vector<uint8_t>&>& data)
+vector<vector<float>> ScanUnit::transform(const vector<const vector<uint8_t>*>& data, uint32_t batch_size)
 {
 	/*
 	thrust::device_vector<float> buffer (batch_size * n_classes * random_ferns.size());
@@ -22,16 +29,19 @@ vector<vector<float>> ScanUnit::transform(const vector<vector<uint8_t>&>& data)
 	vector<device_vector<float>> transformed(random_ferns.size());
 	
 	for (int i = 0; i < data.size(); i += batch_size) {
-		data_batch = packBatch(data, i);
+		data_batch = packBatch(data, batch_size, i);
 
-		for (int j = 0; j < transformed.size(); j++) random_ferns[j].transformBatch(data_batch, transformed[j]);
+		for (int j = 0; j < transformed.size(); j++) random_ferns[j].transformBatch(data_batch, transformed[j], batch_size);
 		//for (int j = 0; j < buffer.size(); j++) out[i + j] = std::move(buffer[j]);
 		cudaDeviceSynchronize();
 
-		unpackTransformed(out, transformed, i);
+		unpackTransformed(out, transformed, batch_size, i);
+		for (auto& vec : transformed) vec.clear();
 	}
 
 	releaseDevice();
+
+	return out;
 }
 
 void ScanUnit::startFitting()
@@ -67,32 +77,35 @@ void ScanUnit::setFeaturesNumber(uint32_t n_features)
 }
 
 device_vector<uint8_t> ScanUnit::packBatch(
-	const std::vector<std::vector<uint8_t>&>& in,
+	const vector<const vector<uint8_t>*>& in,
+	uint32_t batch_size,
 	uint32_t start_idx)
 {
 	device_vector<uint8_t> out(batch_size * n_features);
 	auto out_it = out.begin();
 	auto data_it = in.begin() + start_idx;
-	uint32_t sample_size = data_it->size();
 	while (out_it != out.end())
 	{
-		thrust::copy(data_it->begin(), data_it->end(), out_it);
-		out_it += sample_size;
+		thrust::copy((*data_it)->begin(), (*data_it)->end(), out_it);
+		out_it += n_features;
 		data_it++;
 	}
+
+	return out;
 }
 
-void ScanUnit::unpackTransformed(vector<vector<float>>& dst, vector<thrust::device_vector<float>>& src, int index)
+void ScanUnit::unpackTransformed(
+	vector<vector<float>>& dst,
+	vector<device_vector<float>>& src, 
+	uint32_t batch_size,
+	int index)
 {
-	int transformed_size = src[0].size();
-	vector<float> buffer(src.size() * transformed_size);
-	int sample_step = transformed_size / batch_size;
+	int transformed_size = src[0].size() / batch_size;
 	for (int i = 0; i < batch_size; i++) {
+		dst[index + i] = vector<float>(transformed_size * src.size());
 		for (int j = 0; j < src.size(); j++) {
-			thrust::copy(src[j].begin() + sample_step * i,
-				src[j].begin() + sample_step * (i + 1), dst[index + i].begin() + j * sample_step);
+			thrust::copy(src[j].begin() + transformed_size * i,
+				src[j].begin() + transformed_size * (i + 1), dst[index + i].begin() + j * transformed_size);
 		}
 	}
-
-	for (auto& vec : src) vec.clear();
 }

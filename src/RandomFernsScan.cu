@@ -3,6 +3,16 @@
 using std::vector;
 using thrust::device_vector;
 
+RandomFernsScan::RandomFernsScan(int win_size, int stride, int n_estimators, int depth)
+	: win_size(win_size)
+	, stride(stride)
+	, n_windows((image_height - win_size)* (image_width - win_size) / stride / stride)
+{
+	srand(time(0));
+	ferns.reserve(n_estimators);
+	for (int i = 0; i < n_estimators; i++) ferns.push_back(FernScan(win_size, stride, depth));
+}
+
 void RandomFernsScan::setClassesNumber(uint32_t n_classes)
 {
 	this->n_classes = n_classes;
@@ -40,6 +50,7 @@ void RandomFernsScan::processBatch(device_vector<uint8_t>& data, device_vector<u
 	for (auto& fern : ferns) fern.processBatch(data, labels);
 }
 
+__global__
 void normalizeTransform(float* tranformed, int n_windows, int n_classes)
 {
 	int sample_idx = threadIdx.x;
@@ -52,16 +63,18 @@ void normalizeTransform(float* tranformed, int n_windows, int n_classes)
 	for (int i = 0; i < n_classes; i++) tranformed[begin_idx + i] /= sum;
 }
 
-void RandomFernsScan::transformBatch(device_vector<uint8_t>& batch, device_vector<float>& tranformed)
+void RandomFernsScan::transformBatch(device_vector<uint8_t>& batch,
+	device_vector<float>& tranformed, uint32_t batch_size)
 {
-	int n_windows = (image_height - win_size)*(image_width - win_size) / stride / stride;
 	tranformed = device_vector<float>(batch_size * n_windows * n_classes);
 	for (int i = 0; i < ferns.size(); i++) {
-		ferns[i].transformBatch(batch, tranformed);
+		ferns[i].transformBatch(batch, tranformed, batch_size);
 		cudaDeviceSynchronize();
 	}
 
-	normalizeTransform<<< 1, dim3(batch_size, n_windows, 1)>>>(tranformed);
+	normalizeTransform<<< 1, dim3(batch_size, n_windows, 1)>>>(
+		thrust::raw_pointer_cast(tranformed.data()),
+		n_windows, n_classes);
 }
 
 

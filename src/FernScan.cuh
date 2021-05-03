@@ -3,16 +3,23 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+#include <algorithm>
+#include <ctime>
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+#include <stdio.h>
+#include <iostream>
 
 class FernScan
 {
 public:
-	FernScan(int win_size, int stride, int depth = 10);
+	FernScan(int win_size, int stride, int depth = 3);
 
 	void processBatch(thrust::device_vector<uint8_t>& data, thrust::device_vector<uint32_t>& labels);
-	void transformBatch(thrust::device_vector<uint8_t>& data, thrust::device_vector<float>& transformed);
+	void transformBatch(
+		thrust::device_vector<uint8_t>& data,
+		thrust::device_vector<float>& transformed,
+		uint32_t batch_size);
 
 	void moveHost2Device();
 	void releaseDevice();

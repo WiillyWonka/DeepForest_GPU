@@ -13,12 +13,19 @@
 class RandomFerns
 {
 public:
-	RandomFerns(int n_classes, int n_features, int n_estimators=50, int depth=10);
-	void fit(std::vector<double>& X_train,
-		std::vector<int>& Y_train,
-		int batch_size=30);
-	thrust::device_vector<float> predictProba(std::vector<double>& X_test, int batch_size=30);
+	RandomFerns(int n_classes, int n_features, int n_estimators=5, int depth=3);
+	void processBatch(thrust::device_vector<float>& data, thrust::device_vector<uint32_t>& labels);
+	std::vector<std::vector<float>> transformBatch(thrust::device_vector<float>& data, uint32_t batch_size);
 	std::vector<float> predictProbaSingle(std::vector<double>& X_test);
+
+	void startFitting();
+	void endFitting();
+
+	void moveHost2Device();
+	void releaseDevice();
+
+private:
+	std::vector<std::vector<float>> unpackProba(thrust::device_vector<float>& proba);
 
 private:
 	int n_classes, n_features;

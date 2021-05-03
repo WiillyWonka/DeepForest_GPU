@@ -17,42 +17,14 @@ RandomFerns::RandomFerns(int n_classes, int n_features, int n_estimators, int de
 	: n_classes(n_classes)
 	, n_features(n_features)
 {
-	srand(time(0));
 	ferns.reserve(n_estimators);
 	for (int i = 0; i < n_estimators; i++) ferns.push_back(Fern(n_classes, n_features, depth));
 }
 
-void RandomFerns::fit(vector<double>& X_train, vector<int>& Y_train, int batch_size)
+void RandomFerns::processBatch(device_vector<float>& data, device_vector<uint32_t>& labels)
 {
-	std::cout << std::endl;
-	for (auto& fern : ferns) fern.startFitting();
-
-	int data_step = batch_size * n_features;
-	device_vector<double> d_data(data_step);
-	device_vector<int> d_labels(batch_size);
-
-	auto it_data = X_train.begin();
-	auto it_label = Y_train.begin();
-	while (it_data != X_train.end()) {
-
-		try
-		{
-			thrust::copy(it_data, it_data + data_step, d_data.begin());
-			thrust::copy(it_label, it_label + batch_size, d_labels.begin());
-		}
-		catch (thrust::system_error e)
-		{
-			std::cerr << "Error inside copy: " << e.what() << std::endl;
-			return;
-		}
-
-		for (auto& fern : ferns) fern.processBatch(d_data, d_labels, batch_size);
-		it_data += data_step;
-		it_label += batch_size;
-		gpuErrchk(cudaDeviceSynchronize());
-	}
-
-	for (auto& fern : ferns) fern.endFitting();
+	for (auto& fern : ferns) fern.processBatch(data, labels);
+	gpuErrchk(cudaDeviceSynchronize());
 	//ferns[0].printValue();
 }
 
@@ -68,42 +40,21 @@ void normalizeProba(float* proba, int n_classes) {
 		proba[i] /= sum;
 }
 
-device_vector<float> RandomFerns::predictProba(std::vector<double>& X_test, int batch_size)
+
+vector<vector<float>> RandomFerns::transformBatch(thrust::device_vector<float>& data, uint32_t batch_size)
 {
-	for (auto& fern : ferns) fern.moveHost2Device();
 
-	int data_step = batch_size * n_features;
-	int proba_step = batch_size * n_classes;
-	int n_samples = X_test.size() / n_features;
-	device_vector<double> d_data(data_step);
-	device_vector<float> proba(n_samples * n_classes);
-	thrust::device_ptr<float> proba_ptr = proba.data();
+	device_vector<float> proba(batch_size * n_classes, 0);
 
-	auto it_data = X_test.begin();
-	while (it_data != X_test.end()) {
+	for (auto& fern : ferns) fern.transformBatch(data, proba, batch_size);
 
-		try
-		{
-			thrust::copy(it_data, it_data + data_step, d_data.begin());
-		}
-		catch (thrust::system_error e)
-		{
-			std::cerr << "Error inside copy: " << e.what() << std::endl;
-			return device_vector<float>();
-		}
+	gpuErrchk(cudaDeviceSynchronize());
 
-		for (auto& fern : ferns) fern.predictProbaBatch(d_data, proba_ptr, batch_size);
-		it_data += data_step;
-		proba_ptr += proba_step;
-		gpuErrchk(cudaDeviceSynchronize());
-	}
+	normalizeProba << < 1, batch_size >> > (raw_pointer_cast(proba.data()), n_classes);
 
-	for (auto& fern : ferns) fern.moveDevice2Host();
-
-	normalizeProba << < 1, n_samples >>> (raw_pointer_cast(proba.data()), n_classes);
-
-	return proba;
+	return unpackProba(proba);
 }
+
 
 vector<float> RandomFerns::predictProbaSingle(vector<double>& X_test)
 {
@@ -117,4 +68,39 @@ vector<float> RandomFerns::predictProbaSingle(vector<double>& X_test)
 	for (auto& p : proba) sum += p;
 	for (auto& p : proba) p /= sum;
 	return proba;
+}
+
+void RandomFerns::startFitting()
+{
+	for (auto& fern : ferns) fern.startFitting();
+}
+
+void RandomFerns::endFitting()
+{
+	for (auto& fern : ferns) fern.endFitting();
+}
+
+void RandomFerns::moveHost2Device()
+{
+	for (auto& fern : ferns) fern.moveHost2Device();
+}
+
+void RandomFerns::releaseDevice()
+{
+	for (auto& fern : ferns) fern.releaseDevice();
+}
+
+vector<vector<float>> RandomFerns::unpackProba(device_vector<float>& proba)
+{
+	uint32_t batch_size = proba.size() / n_classes;
+
+	vector<vector<float>> out(batch_size);
+
+	for (int i = 0; i < batch_size; i++) {
+		out[i] = vector<float>(n_classes);
+		auto it = proba.begin() + i * n_classes;
+		thrust::copy(it, it + n_classes, out[i].begin());
+	}
+
+	return out;
 }
