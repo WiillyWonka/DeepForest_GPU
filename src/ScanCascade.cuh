@@ -9,7 +9,7 @@
 class ScanCascade
 {
 public:
-	ScanCascade();
+	ScanCascade(int n_scan_units, int n_estimators, int n_ferns, int depth, int win_size, int stride);
 
 	void fit(const std::vector<std::vector<uint8_t>>& X_train, const std::vector<uint32_t>& y_train, uint32_t batch_size);
 	std::vector<std::vector<float>> transform(

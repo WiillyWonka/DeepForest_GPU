@@ -3,8 +3,9 @@
 using std::vector;
 using thrust::device_vector;
 
-ScanCascade::ScanCascade() 
-	: scan_units(1)
+ScanCascade::ScanCascade(
+	int n_scan_units, int n_estimators, int n_ferns, int depth, int win_size, int stride)
+	: scan_units(n_scan_units, ScanUnit(n_estimators, n_ferns, depth, win_size, stride))
 {}
 
 
@@ -14,20 +15,22 @@ void ScanCascade::fit(const vector<vector<uint8_t>>& data, const vector<uint32_t
 
 	device_vector<uint8_t> data_batch;
 	device_vector<uint32_t> label_batch;
+	uint32_t current_size;
 	for (int i = 0; i < data.size(); i += batch_size) {
-		data_batch = packBatch(data, batch_size, i);
-		label_batch = packBatch(labels, batch_size, i);
+		current_size = std::min(static_cast<int>(batch_size), static_cast<int>(data.size()) - i);
+		data_batch = packBatch(data, current_size, i);
+		label_batch = packBatch(labels, current_size, i);
 
 		/*
 		for (auto i : data_batch)
 			std::cout << (int)i << std::endl;
 		*/
-		for (auto& unit : scan_units) unit.processBatch(data_batch, label_batch);
+		for (auto& unit : scan_units) 
+			unit.processBatch(data_batch, label_batch);
 
 		cudaDeviceSynchronize();
-		data_batch.clear();
-		label_batch.clear();
-		std::cout << (int)i << std::endl;
+		data_batch = device_vector<uint8_t>();
+		label_batch = device_vector<uint32_t>();
 	}
 
 	for (auto& unit : scan_units) unit.endFitting();
@@ -37,23 +40,6 @@ vector<vector<float>> ScanCascade::transform(const vector<const vector<uint8_t>*
 	uint32_t index, uint32_t batch_size)
 {
 	return scan_units[index].transform(data, batch_size);
-
-	/*
-	scan_units[index].moveHost2Device();
-
-	vector<vector<float>> out(data.size()), buffer;
-	device_vector<uint8_t> data_batch;
-	for (int i = 0; i < data.size(); i += batch_size) {
-		data_batch = packBatch(data, i);
-
-		buffer = scan_units[index].transformBatch(data_batch);
-		for (int j = 0; j < buffer.size(); j++) out[i + j] = std::move(buffer[j]);
-
-		cudaDeviceSynchronize();
-	}
-
-	scan_units[index].moveHost2Device();
-	*/
 }
 
 

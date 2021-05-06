@@ -8,7 +8,7 @@
 class RandomFernsScan
 {
 public:
-	RandomFernsScan(int win_size = 14, int stride = 1, int n_estimators = 3, int depth = 2);
+	RandomFernsScan(int n_estimators, int depth, int win_size, int stride);
 
 	void setClassesNumber(uint32_t n_classes);
 	void setFeaturesNumber(uint32_t n_features);

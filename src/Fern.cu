@@ -1,5 +1,15 @@
 ﻿#include "fern.cuh"
 
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
+{
+	if (code != cudaSuccess)
+	{
+		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+		if (abort) exit(code);
+	}
+}
+
 using std::vector;
 using thrust::device_vector;
 using thrust::raw_pointer_cast;
@@ -67,13 +77,13 @@ void processBatchKernel(
 	double value = data[blockIdx.x * n_features + idx];
 	temp[threadIdx.x] = threshold < value;
 
-	if (threadIdx.x != blockDim.x - 1) return;
+	if (threadIdx.x == blockDim.x - 1) {
+		int count = 0;
+		for (int i = 0; i < depth; i++) count = (count << 1) + temp[i];
 
-	int count = 0;
-	for (int i = 0; i < depth; i++) count = (count << 1) + temp[i];
-
-	int label = labels[blockIdx.x];
-	atomicAdd(&hist[label * (1 << depth) + count], 1);
+		int label = labels[blockIdx.x];
+		atomicAdd(&hist[label * (1 << depth) + count], 1);
+	}
 }
 
 void Fern::processBatch(device_vector<float>& data, device_vector<uint32_t>& labels)
@@ -88,6 +98,7 @@ void Fern::processBatch(device_vector<float>& data, device_vector<uint32_t>& lab
 
 	processBatchKernel <<<batch_size, depth, depth * sizeof(char)>>> 
 		(data_ptr, labels_ptr, feature_idx, thresholds, hist, n_classes, n_features);
+	gpuErrchk(cudaPeekAtLastError());
 }
 
 __global__
@@ -150,18 +161,26 @@ vector<float> Fern::predictProbaSingle(vector<double>& X_test)
 }
 
 __global__
-void normalizeHistKernel(float* hist, int n_classes)
+void normalizeHistKernel(float* hist, int n_classes, int start_idx, int depth)
 {
+	int hist_size = 1 << depth;
 	float sum = 0;
-	for (int i = 0; i < n_classes; i++) sum += hist[blockDim.x * i + threadIdx.x];
+	for (int i = 0; i < n_classes; i++) sum += hist[hist_size * i + start_idx + threadIdx.x];
 
-	for (int i = 0; i < n_classes; i++) hist[blockDim.x * i + threadIdx.x] /= sum;
+	for (int i = 0; i < n_classes; i++) hist[hist_size * i + start_idx + threadIdx.x] /= sum;
 }
 
 void Fern::normalizeHist()
 {
 	float* hist = raw_pointer_cast(d_hist.data());
-	normalizeHistKernel <<<1, (1 << depth) >>>	(hist, n_classes);
-	cudaDeviceSynchronize();
+
+	int max_threads_per_block = 512;
+	int n_threads = std::min(max_threads_per_block, static_cast<int>(d_hist.size() / n_classes));
+	for (int i = 0; i < d_hist.size() / n_classes; i += n_threads) {
+		n_threads = std::min(max_threads_per_block, static_cast<int>(d_hist.size() - i) / n_classes);
+		normalizeHistKernel <<<1, n_threads >>> (hist, n_classes, i, depth);
+	}
+
+	gpuErrchk(cudaPeekAtLastError());
 }
 

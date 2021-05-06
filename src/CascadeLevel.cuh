@@ -7,7 +7,7 @@
 class CascadeLevel
 {
 public:
-	CascadeLevel(uint32_t n_estimators, uint32_t n_classes, uint32_t n_features);
+	CascadeLevel(int n_estimators, int n_ferns, int depth, int n_classes, int n_features);
 	void fit(const std::vector<std::vector<float>>& data, const std::vector<uint32_t>& label, uint32_t batch_size);
 	std::vector<std::vector<float>> transform(std::vector<std::vector<float>>& data, uint32_t batch_size);
 	size_t size() { return random_ferns.size(); };

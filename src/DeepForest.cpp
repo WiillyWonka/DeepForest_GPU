@@ -1,8 +1,34 @@
 #include "DeepForest.h"
 
-DeepForest::DeepForest()
+DeepForest::DeepForest(const json11::Json& config)
+	: scan_cascade(
+		config["Scanning Cascade"]["size"].int_value(),
+		config["Scanning Cascade"]["N Random Ferns"].int_value(),
+		config["Scanning Cascade"]["N Ferns"].int_value(),
+		config["Scanning Cascade"]["depth"].int_value(),
+		config["Scanning Cascade"]["windows size"].int_value(),
+		config["Scanning Cascade"]["stride"].int_value()
+	)
 {
-	srand(time(0));
+	if (!config["seed"].is_null())
+		srand(config["seed"].int_value());
+	else
+		srand(time(0));
+	
+	if (config["Cascade"]["N Random Ferns"].is_null())
+		n_random_ferns = 1;
+	else
+		n_random_ferns = config["Cascade"]["N Random Ferns"].int_value();
+
+	if (config["Cascade"]["N Ferns"].is_null())
+		n_ferns = 100;
+	else
+		n_ferns = config["Cascade"]["N Ferns"].int_value();
+	
+	if (config["Cascade"]["depth"].is_null())
+		depth = 10;
+	else
+		depth = config["Cascade"]["depth"].int_value();
 }
 
 void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y,
@@ -15,9 +41,16 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	scan_cascade.setClassesNumber(n_classes);
 	scan_cascade.setFeaturesNumber(n_features);
 
-	scan_cascade.fit(X, y, batch_size);
+	std::cout << "Fitting of scanning level..." << std::endl;
 
-	double acc = 0, prev_acc = DBL_MAX;
+	Timer timer;
+	timer.start();
+	scan_cascade.fit(X, y, batch_size);
+	timer.stop();
+
+	std::cout << "Fitting of scanning level time: " << timer.elapsedSeconds() << std::endl;
+
+	double acc = DBL_MAX, prev_acc = 0;
 
 	
 	vector<vector<float>> transformed;
@@ -28,13 +61,39 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 		getKFoldData(X, y, X_train, y_train, X_test, y_test);
 		transformed = getLastTransformed(X_train, batch_size);
 
-		cascade.push_back(CascadeLevel(n_random_ferns, n_classes, n_features));
+		cascade.push_back(CascadeLevel(n_random_ferns, n_ferns, depth, n_classes, transformed[0].size()));
 		CascadeLevel& last_level = cascade.back();
-		last_level.fit(transformed, y_train, batch_size);
 
-		predicted = predict(X_test, batch_size);
+		std::cout << "Fitting of " << cascade.size() << "th cascade..." << std::endl;
+
+		try {
+			timer.start();
+			last_level.fit(transformed, y_train, batch_size);
+			timer.stop();
+		}
+		catch (thrust::system::detail::bad_alloc e) {
+			std::cout << "Not enough memory on device" << std::endl;
+			return;
+		}
+
+		std::cout << "Fitting of " << cascade.size() << "th cascade time: " << timer.elapsedSeconds() << std::endl;
+
+		std::cout << "Calculating current accuarcy..." << std::endl;
+
+		try {
+			timer.start();
+			predicted = predict(X_test, batch_size);
+			timer.stop();
+		}
+		catch (thrust::system::detail::bad_alloc e) {
+			std::cout << "Not enough memory on device" << std::endl;
+			return;
+		}
+
+		std::cout << "Calculating current accuarcy time: " << timer.elapsedSeconds() << std::endl;
 		prev_acc = acc;
 		acc = accuracy(y_test, predicted);
+		std::cout << "Current accuarcy: " << acc << std::endl;
 	}
 }
 
@@ -82,18 +141,25 @@ vector<vector<float>> DeepForest::probaAveraging(vector<vector<float>> last_outp
 void DeepForest::getKFoldData(
 	const vector<vector<uint8_t>>& in_X,
 	const vector<uint32_t>& in_y,
-	vector<const vector<uint8_t>*>& X_test,
-	vector<uint32_t>& y_test,
 	vector<const vector<uint8_t>*>& X_train,
-	vector<uint32_t>& y_train
+	vector<uint32_t>& y_train,
+	vector<const vector<uint8_t>*>& X_test,
+	vector<uint32_t>& y_test	
 	)
 {
+	assert(in_X.size() >= k && "K for k-fold should be greater or equal than size of dataset");
+
+	X_train.clear(), y_train.clear();
+	X_test.clear(); y_test.clear();
+
+
 	vector<uint32_t> indices(in_X.size());
 	std::iota(indices.begin(), indices.end(), 0);
 
 	std::random_shuffle(indices.begin(), indices.end());
 
 	X_train.reserve(indices.size() * (k - 1) / k);
+	y_train.reserve(in_y.size() * (k - 1) / k);
 
 	uint32_t index;
 	for (uint32_t i = 0; i < indices.size() * (k - 1) / k; i++) {
@@ -125,10 +191,10 @@ vector<vector<float>> DeepForest::getLastOutput(const vector<const vector<uint8_
 		buffer = it->transform(last_transformed, batch_size);
 
 		for (uint32_t j = 0; j < buffer.size(); j++) {
-			last_transformed[j] = vector<float>(last_transformed[j].size() + scan_transformed[j].size());
+			last_transformed[j] = vector<float>(buffer[j].size() + scan_transformed[j].size());
 			std::copy(buffer[j].begin(), buffer[j].end(), last_transformed[j].begin());
 			std::copy(scan_transformed[j].begin(), scan_transformed[j].end(),
-				last_transformed[j].begin() + scan_transformed[j].size());
+				last_transformed[j].begin() + buffer[j].size());
 		}
 
 		//last_transformed = std::move(buffer);
@@ -148,11 +214,12 @@ vector<vector<float>> DeepForest::getLastTransformed(const vector<const vector<u
 	if (cascade.size() == 0) return buffer;
 
 	scan_transformed = scan_cascade.transform(data, cascade.size() % scan_cascade.size(), batch_size);
-	for (uint32_t j = 0; j < buffer.size(); j++) {
-		last_transformed[j] = vector<float>(last_transformed[j].size() + scan_transformed[j].size());
+	last_transformed = vector<vector<float>>(batch_size);
+	for (uint32_t j = 0; j < last_transformed.size(); j++) {
+		last_transformed[j] = vector<float>(buffer[j].size() + scan_transformed[j].size());
 		std::copy(buffer[j].begin(), buffer[j].end(), last_transformed[j].begin());
 		std::copy(scan_transformed[j].begin(), scan_transformed[j].end(),
-			last_transformed[j].begin() + scan_transformed[j].size());
+			last_transformed[j].begin() + buffer[j].size());
 	}
 
 	return last_transformed;
@@ -160,7 +227,7 @@ vector<vector<float>> DeepForest::getLastTransformed(const vector<const vector<u
 
 uint32_t DeepForest::getClassNumber(const vector<uint32_t>& labels)
 {
-	return *std::max_element(labels.begin(), labels.end());
+	return *std::max_element(labels.begin(), labels.end()) + 1;
 }
 
 double DeepForest::accuracy(vector<uint32_t>& test, vector<uint32_t>& pred)

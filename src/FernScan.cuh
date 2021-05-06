@@ -35,10 +35,8 @@ private:
 	uint32_t depth, n_classes, n_features, win_size, stride;
 	uint32_t image_width = 28, image_height = 28; //TODO: remove hardcode
 	uint8_t min_feature = 0, max_feature = 255;
-	thrust::host_vector<uint32_t> h_feature_idx;
-	thrust::host_vector<uint8_t> h_thresholds;
+	thrust::host_vector<int> h_feature_idx, h_thresholds;
 	thrust::host_vector<float> h_hist;
-	thrust::device_vector<uint32_t> d_feature_idx;
-	thrust::device_vector<uint8_t> d_thresholds;
+	thrust::device_vector<int> d_feature_idx, d_thresholds;
 	thrust::device_vector<float> d_hist;
 };

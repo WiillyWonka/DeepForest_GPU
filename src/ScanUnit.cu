@@ -3,16 +3,17 @@
 using std::vector;
 using thrust::device_vector;
 
-ScanUnit::ScanUnit(int n_estimators)
+ScanUnit::ScanUnit(int n_estimators, int n_ferns, int depth, int win_size, int stride)
 {
-	srand(time(0));
 	random_ferns.reserve(n_estimators);
-	for (int i = 0; i < n_estimators; i++) random_ferns.push_back(RandomFernsScan());
+	for (int i = 0; i < n_estimators; i++)
+		random_ferns.push_back(RandomFernsScan(win_size, stride, n_ferns, depth));
 }
 
 void ScanUnit::processBatch(thrust::device_vector<uint8_t>& data_batch, thrust::device_vector<uint32_t>& label_batch)
 {
-	for (auto& random_fern : random_ferns) random_fern.processBatch(data_batch, label_batch);
+	for (auto& random_fern : random_ferns) 
+		random_fern.processBatch(data_batch, label_batch);
 }
 
 vector<vector<float>> ScanUnit::transform(const vector<const vector<uint8_t>*>& data, uint32_t batch_size)
@@ -27,15 +28,16 @@ vector<vector<float>> ScanUnit::transform(const vector<const vector<uint8_t>*>& 
 	vector<vector<float>> out(data.size());
 	device_vector<uint8_t> data_batch;
 	vector<device_vector<float>> transformed(random_ferns.size());
-	
+	uint32_t current_size;
 	for (int i = 0; i < data.size(); i += batch_size) {
-		data_batch = packBatch(data, batch_size, i);
+		current_size = std::min(static_cast<int>(batch_size), static_cast<int>(data.size()) - i);
+		data_batch = packBatch(data, current_size, i);
 
-		for (int j = 0; j < transformed.size(); j++) random_ferns[j].transformBatch(data_batch, transformed[j], batch_size);
+		for (int j = 0; j < transformed.size(); j++) random_ferns[j].transformBatch(data_batch, transformed[j], current_size);
 		//for (int j = 0; j < buffer.size(); j++) out[i + j] = std::move(buffer[j]);
 		cudaDeviceSynchronize();
 
-		unpackTransformed(out, transformed, batch_size, i);
+		unpackTransformed(out, transformed, current_size, i);
 		for (auto& vec : transformed) vec.clear();
 	}
 

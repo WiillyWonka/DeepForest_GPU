@@ -3,8 +3,18 @@
 using std::vector;
 using thrust::device_vector;
 
-CascadeLevel::CascadeLevel(uint32_t n_estimators, uint32_t n_classes, uint32_t n_features)
-	: random_ferns(n_estimators, RandomFerns(n_classes, n_features, 5, 3))
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
+{
+	if (code != cudaSuccess)
+	{
+		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+		if (abort) exit(code);
+	}
+}
+
+CascadeLevel::CascadeLevel(int n_estimators, int n_ferns, int depth, int n_classes, int n_features)
+	: random_ferns(n_estimators, RandomFerns(n_classes, n_features, n_ferns, depth))
 	, n_classes(n_classes)
 {
 }
@@ -19,14 +29,18 @@ void CascadeLevel::fit(
 	vector<vector<float>> out(data.size());
 	device_vector<float> data_batch;
 	device_vector<uint32_t> label_batch;
-	
+	uint32_t current_size;
 	for (int i = 0; i < data.size(); i += batch_size) {
-		data_batch = packBatch(data, i, batch_size);
-		label_batch = packBatch(labels, i, batch_size);
+		current_size = std::min(static_cast<int>(batch_size), static_cast<int>(data.size()) - i);
+		data_batch = packBatch(data, i, current_size);
+		label_batch = packBatch(labels, i, current_size);
 
+		gpuErrchk(cudaPeekAtLastError());
 		for (auto& random_fern : random_ferns) random_fern.processBatch(data_batch, label_batch);
 
-		cudaDeviceSynchronize();
+		gpuErrchk(cudaDeviceSynchronize());
+		data_batch = device_vector<float>();
+		label_batch = device_vector<uint32_t>();
 	}
 
 	endFitting();
@@ -40,15 +54,17 @@ vector<vector<float>> CascadeLevel::transform(vector<vector<float>>& data, uint3
 	vector<vector<float>> transformed(data.size());
 	vector<vector<vector<float>>> buffer(random_ferns.size());
 
+	uint32_t current_size;
 	for (int i = 0; i < data.size(); i += batch_size) {
-		data_batch = packBatch(data, i, batch_size);
+		current_size = std::min(static_cast<int>(batch_size), static_cast<int>(data.size()) - i - 1);
+		data_batch = packBatch(data, i, current_size);
 
 		for (int j = 0; j < random_ferns.size(); j++) 
-			buffer[j] = random_ferns[j].transformBatch(data_batch, batch_size);
+			buffer[j] = random_ferns[j].transformBatch(data_batch, current_size);
 
 		cudaDeviceSynchronize();
 
-		unpackTransformed(transformed, buffer, i, batch_size);
+		unpackTransformed(transformed, buffer, i, current_size);
 	}
 
 	releaseDevice();
@@ -93,7 +109,7 @@ void CascadeLevel::unpackTransformed(vector<vector<float>>& transformed,
 		auto transformed_it = transformed[i + start_idx].begin();
 		for (auto& proba : buffer) {
 			std::copy(proba[i].begin(), proba[i].end(), transformed_it);
-			transformed_it += proba.size();
+			transformed_it += proba[i].size();
 		}
 	}
 }

@@ -10,7 +10,7 @@ using std::vector;
 class ScanUnit
 {
 public:
-	ScanUnit(int n_estimators = 2);
+	ScanUnit(int n_estimators, int n_ferns, int depth, int win_size, int stride);
 	
 	void processBatch(thrust::device_vector<uint8_t>& data_batch, thrust::device_vector<uint32_t>& label_batch);
 	std::vector<std::vector<float>> transform(const vector<const vector<uint8_t>*>& data, uint32_t batch_size);

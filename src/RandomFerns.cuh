@@ -13,7 +13,7 @@
 class RandomFerns
 {
 public:
-	RandomFerns(int n_classes, int n_features, int n_estimators=5, int depth=3);
+	RandomFerns(int n_classes, int n_features, int n_estimators=3, int depth=5);
 	void processBatch(thrust::device_vector<float>& data, thrust::device_vector<uint32_t>& labels);
 	std::vector<std::vector<float>> transformBatch(thrust::device_vector<float>& data, uint32_t batch_size);
 	std::vector<float> predictProbaSingle(std::vector<double>& X_test);

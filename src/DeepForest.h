@@ -6,9 +6,12 @@
 #include <numeric>
 #include <algorithm>
 #include <iostream>
+#include <cassert>
 
 #include "ScanCascade.cuh"
 #include "CascadeLevel.cuh"
+#include "json11/json11.hpp"
+#include "Timer.h"
 
 
 using std::vector;
@@ -16,7 +19,7 @@ using std::vector;
 class DeepForest
 {
 public:
-	DeepForest();
+	DeepForest(const json11::Json& config);
 
 	void fit(const std::vector<std::vector<uint8_t>>& X_train, const std::vector<uint32_t>& y_train,
 		int img_height, int img_width, int batch_size);
@@ -45,7 +48,7 @@ private:
 private:
 	ScanCascade scan_cascade;
 	std::list<CascadeLevel> cascade;
-	uint32_t n_classes, n_features, k = 3, n_random_ferns = 2;
-	double tolerance = 0.1;
+	int n_classes, n_features, k = 5, n_random_ferns, n_ferns, depth;
+	double tolerance = 0.001;
 };
 
