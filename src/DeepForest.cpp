@@ -35,6 +35,10 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	int img_height, int img_width,
 	int batch_size)
 {
+	Timer general_timer;
+	std::cout << "Start Deep Forest fitting" << std::endl;
+	general_timer.start();
+
 	n_classes = getClassNumber(y);
 	n_features = X.begin()->size();
 
@@ -95,6 +99,10 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 		acc = accuracy(y_test, predicted);
 		std::cout << "Current accuarcy: " << acc << std::endl;
 	}
+
+	general_timer.stop();
+	std::cout << "Deep Forest fitting is over" << std::endl;
+	std::cout << "Fitting time: " << general_timer.elapsedSeconds() << std::endl;
 }
 
 std::vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& X_test, int batch_size)
@@ -196,8 +204,6 @@ vector<vector<float>> DeepForest::getLastOutput(const vector<const vector<uint8_
 			std::copy(scan_transformed[j].begin(), scan_transformed[j].end(),
 				last_transformed[j].begin() + buffer[j].size());
 		}
-
-		//last_transformed = std::move(buffer);
 	}
 
 	last_transformed = cascade.back().transform(last_transformed, batch_size);
@@ -208,7 +214,6 @@ vector<vector<float>> DeepForest::getLastOutput(const vector<const vector<uint8_
 vector<vector<float>> DeepForest::getLastTransformed(const vector<const vector<uint8_t>*>& data, uint32_t batch_size)
 {
 	vector<vector<float>> scan_transformed, last_transformed, buffer;
-	//std::cout << (cascade.size() - 1) << " " << scan_cascade.size() << " " << (cascade.size() - 1) % scan_cascade.size() << std::endl;
 	buffer = getLastOutput(data, batch_size);
 
 	if (cascade.size() == 0) return buffer;
