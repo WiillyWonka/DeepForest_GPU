@@ -20,7 +20,7 @@ CascadeLevel::CascadeLevel(int n_estimators, int n_ferns, int depth, int n_class
 }
 
 void CascadeLevel::fit(
-	const std::vector<std::vector<float>>& data,
+	const std::vector<const std::vector<float>*>& data,
 	const std::vector<uint32_t>& labels,
 	uint32_t batch_size)
 {
@@ -46,12 +46,12 @@ void CascadeLevel::fit(
 	endFitting();
 }
 
-vector<vector<float>> CascadeLevel::transform(vector<vector<float>>& data, uint32_t batch_size)
+void CascadeLevel::caluclateTransform(const vector<vector<float>>& data, uint32_t batch_size)
 {
 	moveHost2Device();
 
 	device_vector<float> data_batch;
-	vector<vector<float>> transformed(data.size());
+	transformed = vector<vector<float>>(data.size());
 	vector<vector<vector<float>>> buffer(random_ferns.size());
 
 	uint32_t current_size;
@@ -68,7 +68,16 @@ vector<vector<float>> CascadeLevel::transform(vector<vector<float>>& data, uint3
 	}
 
 	releaseDevice();
+}
+
+const std::vector<std::vector<float>>& CascadeLevel::getTransfomed() const
+{
 	return transformed;
+}
+
+void CascadeLevel::clearTranformed()
+{
+	transformed.clear();
 }
 
 void CascadeLevel::moveHost2Device()
@@ -126,6 +135,25 @@ device_vector<float> CascadeLevel::packBatch(
 	while (out_it != out.end())
 	{
 		thrust::copy(data_it->begin(), data_it->end(), out_it);
+		out_it += sample_size;
+		data_it++;
+	}
+
+	return out;
+}
+
+device_vector<float> CascadeLevel::packBatch(
+	const vector<const vector<float>*>& in,
+	uint32_t start_idx,
+	uint32_t batch_size)
+{
+	device_vector<float> out(batch_size * in[0]->size());
+	auto out_it = out.begin();
+	auto data_it = in.begin() + start_idx;
+	uint32_t sample_size = (*data_it)->size();
+	while (out_it != out.end())
+	{
+		thrust::copy((*data_it)->begin(), (*data_it)->end(), out_it);
 		out_it += sample_size;
 		data_it++;
 	}

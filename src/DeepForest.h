@@ -28,26 +28,31 @@ public:
 private:
 	vector<uint32_t> predict(const vector<const vector<uint8_t>*>& X_test, int batch_size);
 
-	vector<vector<float>> probaAveraging(vector<vector<float>> last_output);
+	vector<vector<float>> probaAveraging(const vector<vector<float>>& last_output);
+	vector<vector<float>> probaAveraging(const vector<const vector<float>*>& last_output);
 
-	void getKFoldData(
-		const vector<vector<uint8_t>>& in_X,
-		const vector<uint32_t>& in_y,
-		vector<const vector<uint8_t>*>& X_test,
-		vector<uint32_t>& y_test,
-		vector<const vector<uint8_t>*>& X_train,
-		vector<uint32_t>& y_train);
+	void getKFoldIndices(
+		vector<uint32_t>& train_indices,
+		vector<uint32_t>& test_indices,
+		size_t dataset_size);
 
-	vector<vector<float>> getLastOutput(
-		const vector<const vector<uint8_t>*>& data, uint32_t batch_size);
-	vector<vector<float>> getLastTransformed(
-		const vector<const vector<uint8_t>*>& data, uint32_t batch_size);
-	uint32_t getClassNumber(const std::vector<uint32_t>& labels);
-	double accuracy(std::vector<uint32_t>& test, std::vector<uint32_t>& pred);
+	void getSubsetByIndices(
+		const vector<vector<float>>& X_in,
+		const vector<uint32_t>& y_in,
+		const vector<uint32_t>& indices,
+		vector<const vector<float>*>& X_out,
+		vector<uint32_t>& y_out);
+
+	vector<vector<float>> getLastTransformed();
+	vector<vector<float>> concatenate(const vector<vector<float>>& first, const vector<vector<float>> second);
+
+	uint32_t getClassNumber(const vector<uint32_t>& labels);
+
+	double accuracy(vector<uint32_t>& label, vector<vector<float>>& proba);
 
 private:
 	ScanCascade scan_cascade;
-	std::list<CascadeLevel> cascade;
+	std::list<CascadeLevel> cascades;
 	int n_classes, n_features, k = 5, n_random_ferns, n_ferns, depth;
 	double tolerance = 0.001;
 };

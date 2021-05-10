@@ -21,10 +21,6 @@ void ScanCascade::fit(const vector<vector<uint8_t>>& data, const vector<uint32_t
 		data_batch = packBatch(data, current_size, i);
 		label_batch = packBatch(labels, current_size, i);
 
-		/*
-		for (auto i : data_batch)
-			std::cout << (int)i << std::endl;
-		*/
 		for (auto& unit : scan_units) 
 			unit.processBatch(data_batch, label_batch);
 
@@ -36,13 +32,22 @@ void ScanCascade::fit(const vector<vector<uint8_t>>& data, const vector<uint32_t
 	for (auto& unit : scan_units) unit.endFitting();
 }
 
-vector<vector<float>> ScanCascade::transform(const vector<const vector<uint8_t>*>& data,
-	uint32_t index, uint32_t batch_size)
+void ScanCascade::calculateTransform(const vector<vector<uint8_t>>& data, uint32_t batch_size)
 {
-	return scan_units[index].transform(data, batch_size);
+	for (auto& unit : scan_units)
+		unit.calculateTransform(data, batch_size);
 }
 
+void ScanCascade::clearTransformed()
+{
+	for (auto& unit : scan_units)
+		unit.clearTransformed();
+}
 
+const vector<vector<float>>& ScanCascade::getTransformed(uint32_t index) const
+{
+	return scan_units[index].getTranformed();
+}
 
 void ScanCascade::setClassesNumber(uint32_t n_classes)
 {

@@ -42,9 +42,14 @@ void Fern::moveHost2Device()
 void Fern::releaseDevice()
 {
 	h_hist = d_hist;
+
 	d_feature_idx.clear();
 	d_hist.clear();
 	d_thresholds.clear();
+
+	d_feature_idx.shrink_to_fit();
+	d_hist.shrink_to_fit();
+	d_thresholds.shrink_to_fit();
 }
 
 void Fern::startFitting()
