@@ -35,6 +35,10 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	int img_height, int img_width,
 	int batch_size)
 {
+	Timer general_timer;
+	std::cout << "Start Deep Forest fitting" << std::endl;
+	general_timer.start();
+
 	n_classes = getClassNumber(y);
 	n_features = X.begin()->size();
 
@@ -48,81 +52,135 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	scan_cascade.fit(X, y, batch_size);
 	timer.stop();
 
-	std::cout << "Fitting of scanning level time: " << timer.elapsedSeconds() << std::endl;
+	std::cout << "Fitting time: " << timer.elapsedSeconds() << std::endl;
+
+	std::cout << "Calculating transformed features by scanning level..." << std::endl;
+
+	timer.start();
+	scan_cascade.calculateTransform(X, batch_size);
+	timer.stop();
+
+	std::cout << "Transformed features calculating time: " << timer.elapsedSeconds() << std::endl;
 
 	double acc = DBL_MAX, prev_acc = 0;
 
 	
-	vector<vector<float>> transformed;
-	vector<const vector<uint8_t>*> X_train, X_test;
-	vector<uint32_t> y_train, y_test, predicted;
+	vector<vector<float>> transformed, proba;
+	vector<const vector<float>*> X_train, test_transformed;
+	vector<uint32_t> train_indices, test_indices, y_train, y_test;
 
 	while (fabs(acc - prev_acc) > tolerance) {
-		getKFoldData(X, y, X_train, y_train, X_test, y_test);
-		transformed = getLastTransformed(X_train, batch_size);
+		getKFoldIndices(train_indices, test_indices, y.size());
+		transformed = getLastTransformed();
 
-		cascade.push_back(CascadeLevel(n_random_ferns, n_ferns, depth, n_classes, transformed[0].size()));
-		CascadeLevel& last_level = cascade.back();
+		cascades.push_back(CascadeLevel(n_random_ferns, n_ferns, depth, n_classes, transformed[0].size()));
+		CascadeLevel& last_level = cascades.back();
 
-		std::cout << "Fitting of " << cascade.size() << "th cascade..." << std::endl;
+		cascades.back().clearTranformed();
+
+		getSubsetByIndices(transformed, y, train_indices, X_train, y_train);
+
+		std::cout << "Fitting of " << cascades.size() << "th cascade..." << std::endl;
 
 		try {
 			timer.start();
-			last_level.fit(transformed, y_train, batch_size);
+			last_level.fit(X_train, y_train, batch_size);
 			timer.stop();
 		}
 		catch (thrust::system::detail::bad_alloc e) {
-			std::cout << "Not enough memory on device" << std::endl;
-			return;
+			throw std::exception("Not enough memory on device");
 		}
 
-		std::cout << "Fitting of " << cascade.size() << "th cascade time: " << timer.elapsedSeconds() << std::endl;
+		std::cout << "Fitting of " << cascades.size() << "th cascade time: " << timer.elapsedSeconds() << std::endl;
+
+		std::cout << "Calculation transformed of " << cascades.size() << "th cascade..." << std::endl;
+
+		try {
+			timer.start();
+			last_level.caluclateTransform(transformed, batch_size);
+			timer.stop();
+		}
+		catch (thrust::system::detail::bad_alloc e) {
+			throw std::exception("Not enough memory on device");
+		}
+
+		std::cout << "Calculation transformed of " << cascades.size()
+			<< "th cascade time: " << timer.elapsedSeconds() << std::endl;
 
 		std::cout << "Calculating current accuarcy..." << std::endl;
 
 		try {
 			timer.start();
-			predicted = predict(X_test, batch_size);
+			transformed = last_level.getTransfomed();
 			timer.stop();
 		}
 		catch (thrust::system::detail::bad_alloc e) {
-			std::cout << "Not enough memory on device" << std::endl;
-			return;
+			throw std::exception("Not enough memory on device");
+		}
+		getSubsetByIndices(transformed, y, test_indices, test_transformed, y_test);
+		
+		proba = probaAveraging(test_transformed);
+		
+		prev_acc = acc;
+		acc = accuracy(y_test, proba);
+		
+		std::cout << "Calculating current accuarcy time: " << timer.elapsedSeconds() << std::endl;		
+		std::cout << "Current accuarcy: " << acc << std::endl;
+		
+	}
+
+	scan_cascade.clearTransformed();
+
+	for (auto& cascade : cascades)
+		cascade.clearTranformed();
+
+	general_timer.stop();
+	std::cout << "Deep Forest fitting is over" << std::endl;
+	std::cout << "Fitting time: " << general_timer.elapsedSeconds() << std::endl;
+}
+
+vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& dataset, int batch_size)
+{
+	std::cout << "Prediction begins" << std::endl;
+	try {
+		std::cout << "Calculation scan level" << std::endl;
+		scan_cascade.calculateTransform(dataset, batch_size);
+
+		std::cout << "Calculation 1 cascade level" << std::endl;
+		cascades.front().caluclateTransform(scan_cascade.getTransformed(0), batch_size);
+		CascadeLevel* prev_cascade = &cascades.front();
+		
+		vector<vector<float>> last_transformed;
+		int cascade_idx = 1;
+		for (auto it = ++cascades.begin(); it != cascades.end(); it++) {
+			std::cout << "Calculation " << cascade_idx + 1 << " cascade level" << std::endl;
+			last_transformed = concatenate(prev_cascade->getTransfomed(),
+				scan_cascade.getTransformed(cascade_idx % scan_cascade.size()));
+			prev_cascade->clearTranformed();
+			it->caluclateTransform(last_transformed, batch_size);
+			prev_cascade = &(*it);
+			cascade_idx++;
+		}
+		
+		vector<vector<float>> proba = probaAveraging(cascades.back().getTransfomed());
+
+		vector<uint32_t> predicted(proba.size());
+		for (int i = 0; i < predicted.size(); i++) {
+			auto max_proba = std::max_element(proba[i].begin(), proba[i].end());
+			predicted[i] = max_proba - proba[i].begin();
 		}
 
-		std::cout << "Calculating current accuarcy time: " << timer.elapsedSeconds() << std::endl;
-		prev_acc = acc;
-		acc = accuracy(y_test, predicted);
-		std::cout << "Current accuarcy: " << acc << std::endl;
+		cascades.back().clearTranformed();
+		return predicted;
 	}
-}
-
-std::vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& X_test, int batch_size)
-{
-	vector<const vector<uint8_t>*>p_X_test(X_test.size());
-
-	for (int i = 0; i < X_test.size(); i++)
-		p_X_test[i] = &X_test[i];
-
-	return predict(p_X_test, batch_size);
-}
-
-
-vector<uint32_t> DeepForest::predict(const vector<const vector<uint8_t>*>& X_test, int batch_size)
-{
-	vector<vector<float>> proba = probaAveraging(getLastOutput(X_test, batch_size));
-
-	vector<uint32_t> predicted(proba.size());
-	int predicted_class;
-	for (int i = 0; i < predicted.size(); i++) {
-		auto max_proba = std::max_element(proba[i].begin(), proba[i].end());
-		predicted[i] = max_proba - proba[i].begin();
+	catch (thrust::system::detail::bad_alloc e) {
+		throw std::exception("Not enough memory on device");
 	}
-
-	return predicted;
+	std::cout << "Prediction is over" << std::endl;
 }
 
-vector<vector<float>> DeepForest::probaAveraging(vector<vector<float>> last_output)
+// This method get last cascade output and calculate probability for all samples
+vector<vector<float>> DeepForest::probaAveraging(const vector<vector<float>>& last_output)
 {
 	vector<vector<float>> out(last_output.size());
 	for (int i = 0; i < last_output.size(); i++) {
@@ -138,91 +196,90 @@ vector<vector<float>> DeepForest::probaAveraging(vector<vector<float>> last_outp
 	return out;
 }
 
-void DeepForest::getKFoldData(
-	const vector<vector<uint8_t>>& in_X,
-	const vector<uint32_t>& in_y,
-	vector<const vector<uint8_t>*>& X_train,
-	vector<uint32_t>& y_train,
-	vector<const vector<uint8_t>*>& X_test,
-	vector<uint32_t>& y_test	
-	)
+vector<vector<float>> DeepForest::probaAveraging(const vector<const vector<float>*>& last_output)
 {
-	assert(in_X.size() >= k && "K for k-fold should be greater or equal than size of dataset");
-
-	X_train.clear(), y_train.clear();
-	X_test.clear(); y_test.clear();
-
-
-	vector<uint32_t> indices(in_X.size());
-	std::iota(indices.begin(), indices.end(), 0);
-
-	std::random_shuffle(indices.begin(), indices.end());
-
-	X_train.reserve(indices.size() * (k - 1) / k);
-	y_train.reserve(in_y.size() * (k - 1) / k);
-
-	uint32_t index;
-	for (uint32_t i = 0; i < indices.size() * (k - 1) / k; i++) {
-		index = indices[i];
-		X_train.push_back(&in_X[index]);
-		y_train.push_back(in_y[index]);
-	}
-
-	X_test.reserve(in_X.size() / k);
-	y_test.reserve(in_y.size() / k);
-
-	for (uint32_t i = indices.size() * (k - 1) / k; i < indices.size(); i++) {
-		index = indices[i];
-		X_test.push_back(&in_X[index]);
-		y_test.push_back(in_y[index]);
-	}
-}
-
-vector<vector<float>> DeepForest::getLastOutput(const vector<const vector<uint8_t>*>& data, uint32_t batch_size)
-{
-	vector<vector<float>> scan_transformed, last_transformed, buffer;
-	last_transformed = scan_cascade.transform(data, 0, batch_size);
-
-	if (cascade.size() == 0) return last_transformed;
-
-	auto it = cascade.begin();
-	for (uint32_t i = 0; i < cascade.size() - 1; i++, it++) {
-		scan_transformed = scan_cascade.transform(data, i % scan_cascade.size(), batch_size);
-		buffer = it->transform(last_transformed, batch_size);
-
-		for (uint32_t j = 0; j < buffer.size(); j++) {
-			last_transformed[j] = vector<float>(buffer[j].size() + scan_transformed[j].size());
-			std::copy(buffer[j].begin(), buffer[j].end(), last_transformed[j].begin());
-			std::copy(scan_transformed[j].begin(), scan_transformed[j].end(),
-				last_transformed[j].begin() + buffer[j].size());
+	size_t output_size = last_output[0]->size();
+	vector<vector<float>> out(last_output.size());
+	for (int i = 0; i < last_output.size(); i++) {
+		out[i] = vector<float>(n_classes, 0);
+		for (int j = 0; j < last_output[i]->size(); j++) {
+			out[i][j % n_classes] += (*(last_output[i]))[j];
 		}
 
-		//last_transformed = std::move(buffer);
+		for (auto& proba : out[i])
+			proba /= output_size;
 	}
 
-	last_transformed = cascade.back().transform(last_transformed, batch_size);
-
-	return last_transformed;
+	return out;
 }
 
-vector<vector<float>> DeepForest::getLastTransformed(const vector<const vector<uint8_t>*>& data, uint32_t batch_size)
+void DeepForest::getKFoldIndices(
+	vector<uint32_t>& train_indices,
+	vector<uint32_t>& test_indices,
+	size_t dataset_size
+	)
 {
-	vector<vector<float>> scan_transformed, last_transformed, buffer;
-	//std::cout << (cascade.size() - 1) << " " << scan_cascade.size() << " " << (cascade.size() - 1) % scan_cascade.size() << std::endl;
-	buffer = getLastOutput(data, batch_size);
+	assert(dataset_size >= k && "K for k-fold should be greater or equal than size of dataset");
 
-	if (cascade.size() == 0) return buffer;
+	vector<uint32_t>indices(dataset_size);
+	std::iota(indices.begin(), indices.end(), 0);
+	std::random_shuffle(indices.begin(), indices.end());
 
-	scan_transformed = scan_cascade.transform(data, cascade.size() % scan_cascade.size(), batch_size);
-	last_transformed = vector<vector<float>>(batch_size);
-	for (uint32_t j = 0; j < last_transformed.size(); j++) {
-		last_transformed[j] = vector<float>(buffer[j].size() + scan_transformed[j].size());
-		std::copy(buffer[j].begin(), buffer[j].end(), last_transformed[j].begin());
-		std::copy(scan_transformed[j].begin(), scan_transformed[j].end(),
-			last_transformed[j].begin() + buffer[j].size());
+	train_indices = vector<uint32_t>(dataset_size / k * (k - 1));
+	int idx;
+	for (idx = 0; idx < train_indices.size(); idx++) {
+		train_indices[idx] = indices[idx];
 	}
 
-	return last_transformed;
+	test_indices = vector<uint32_t>(dataset_size - train_indices.size());
+
+	for (int i = 0; i < test_indices.size(); i++) {
+		test_indices[i] = indices[i + idx];
+	}
+}
+
+void DeepForest::getSubsetByIndices(
+	const vector<vector<float>>& X_in, const vector<uint32_t>& y_in, const vector<uint32_t>& indices,
+	vector<const vector<float>*>& X_out, vector<uint32_t>& y_out)
+{
+	X_out = vector<const vector<float>*>(indices.size());
+	y_out = vector<uint32_t>(indices.size());
+
+	uint32_t index;
+	for (uint32_t i = 0; i < indices.size(); i++) {
+		index = indices[i];
+		X_out[i] = &X_in[index];
+		y_out[i] = y_in[index];
+	}
+}
+
+vector<vector<float>> DeepForest::getLastTransformed()
+{
+	if (cascades.size() == 0) return scan_cascade.getTransformed(0);
+
+	const vector<vector<float>>& scan_transformed =
+		scan_cascade.getTransformed(cascades.size() % scan_cascade.size());
+	
+	const vector<vector<float>>& last_transformed = cascades.back().getTransfomed();
+
+	return concatenate(last_transformed, scan_transformed);
+}
+
+vector<vector<float>> DeepForest::concatenate(const vector<vector<float>>& first, const vector<vector<float>> second)
+{
+	assert(first.size() == second.size() &&
+		"Size of input arrays is not equal");
+
+	vector<vector<float>> out(first.size());
+
+	for (uint32_t j = 0; j < out.size(); j++) {
+		out[j] = vector<float>(first[j].size() + second[j].size());
+		std::copy(first[j].begin(), first[j].end(), out[j].begin());
+		std::copy(second[j].begin(), second[j].end(),
+			out[j].begin() + first[j].size());
+	}
+
+	return out;
 }
 
 uint32_t DeepForest::getClassNumber(const vector<uint32_t>& labels)
@@ -230,12 +287,19 @@ uint32_t DeepForest::getClassNumber(const vector<uint32_t>& labels)
 	return *std::max_element(labels.begin(), labels.end()) + 1;
 }
 
-double DeepForest::accuracy(vector<uint32_t>& test, vector<uint32_t>& pred)
+double DeepForest::accuracy(vector<uint32_t>& label, vector<vector<float>>& proba)
 {
+	assert(label.size() == proba.size() &&
+		"proba size should be equal label size");
+
+	uint32_t predicted_class;
 	double out = 0;
-	for (uint32_t i = 0; i < test.size(); i++) {
-		out += (test[i] == pred[i]);
+	for (uint32_t i = 0; i < proba.size(); i++) {
+		auto max_proba = std::max_element(proba[i].begin(), proba[i].end());
+		predicted_class = max_proba - proba[i].begin();
+		out += (label[i] == predicted_class);
 	}
 
-	return out / test.size();
+	return out / label.size();
 }
+

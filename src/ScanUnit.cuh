@@ -13,8 +13,9 @@ public:
 	ScanUnit(int n_estimators, int n_ferns, int depth, int win_size, int stride);
 	
 	void processBatch(thrust::device_vector<uint8_t>& data_batch, thrust::device_vector<uint32_t>& label_batch);
-	std::vector<std::vector<float>> transform(const vector<const vector<uint8_t>*>& data, uint32_t batch_size);
-	//const std::vector<float> getTranformed(int index) const;	
+	void calculateTransform(const vector<vector<uint8_t>>& data, uint32_t batch_size);
+	void clearTransformed();
+	const std::vector<std::vector<float>>& getTranformed() const;	
 	void startFitting();
 	void endFitting();
 	void moveHost2Device();
@@ -25,7 +26,7 @@ public:
 
 private:
 	thrust::device_vector<uint8_t> packBatch(
-		const vector<const vector<uint8_t>*>& in,
+		const vector<vector<uint8_t>>& in,
 		uint32_t batch_size,
 		uint32_t start_idx);
 
@@ -37,6 +38,6 @@ private:
 
 private:
 	std::vector<RandomFernsScan> random_ferns;
-	std::vector<std::vector<float>> tranformed;
+	std::vector<std::vector<float>> transformed;
 	uint32_t n_classes, n_features;
 };

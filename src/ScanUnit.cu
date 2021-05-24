@@ -16,34 +16,37 @@ void ScanUnit::processBatch(thrust::device_vector<uint8_t>& data_batch, thrust::
 		random_fern.processBatch(data_batch, label_batch);
 }
 
-vector<vector<float>> ScanUnit::transform(const vector<const vector<uint8_t>*>& data, uint32_t batch_size)
+void ScanUnit::calculateTransform(const vector<vector<uint8_t>>& data, uint32_t batch_size)
 {
-	/*
-	thrust::device_vector<float> buffer (batch_size * n_classes * random_ferns.size());
-	for (auto& random_fern : random_ferns) random_fern.tranformBatch(data_batch, label_batch);
-	*/
-
 	moveHost2Device();
 
-	vector<vector<float>> out(data.size());
+	transformed = vector<vector<float>>(data.size());
 	device_vector<uint8_t> data_batch;
-	vector<device_vector<float>> transformed(random_ferns.size());
+	vector<device_vector<float>> buffer(random_ferns.size());
 	uint32_t current_size;
 	for (int i = 0; i < data.size(); i += batch_size) {
 		current_size = std::min(static_cast<int>(batch_size), static_cast<int>(data.size()) - i);
 		data_batch = packBatch(data, current_size, i);
 
-		for (int j = 0; j < transformed.size(); j++) random_ferns[j].transformBatch(data_batch, transformed[j], current_size);
+		for (int j = 0; j < buffer.size(); j++) random_ferns[j].transformBatch(data_batch, buffer[j], current_size);
 		//for (int j = 0; j < buffer.size(); j++) out[i + j] = std::move(buffer[j]);
 		cudaDeviceSynchronize();
 
-		unpackTransformed(out, transformed, current_size, i);
-		for (auto& vec : transformed) vec.clear();
+		unpackTransformed(transformed, buffer, current_size, i);
+		for (auto& vec : buffer) vec.clear();
 	}
 
 	releaseDevice();
+}
 
-	return out;
+void ScanUnit::clearTransformed()
+{
+	transformed.clear();
+}
+
+const std::vector<std::vector<float>>& ScanUnit::getTranformed() const
+{
+	return transformed;
 }
 
 void ScanUnit::startFitting()
@@ -79,7 +82,7 @@ void ScanUnit::setFeaturesNumber(uint32_t n_features)
 }
 
 device_vector<uint8_t> ScanUnit::packBatch(
-	const vector<const vector<uint8_t>*>& in,
+	const vector<vector<uint8_t>>& in,
 	uint32_t batch_size,
 	uint32_t start_idx)
 {
@@ -88,7 +91,7 @@ device_vector<uint8_t> ScanUnit::packBatch(
 	auto data_it = in.begin() + start_idx;
 	while (out_it != out.end())
 	{
-		thrust::copy((*data_it)->begin(), (*data_it)->end(), out_it);
+		thrust::copy(data_it->begin(), data_it->end(), out_it);
 		out_it += n_features;
 		data_it++;
 	}
