@@ -16,7 +16,8 @@ inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort =
 RandomFernsScan::RandomFernsScan(int win_size, int stride, int n_estimators, int depth)
 	: win_size(win_size)
 	, stride(stride)
-	, n_windows((image_height - win_size + 1)* (image_width - win_size + 1) / stride / stride)
+	, n_windows(((image_height - win_size) / stride + 1) *
+		((image_width - win_size)  / stride + 1))
 {
 	srand(time(0));
 	ferns.reserve(n_estimators);

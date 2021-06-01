@@ -5,11 +5,13 @@
 #include <iostream>
 
 #include "ScanUnit.cuh"
+#include "json11/json11.hpp"
 
 class ScanCascade
 {
 public:
 	ScanCascade(int n_scan_units, int n_estimators, int n_ferns, int depth, int win_size, int stride);
+	ScanCascade(const json11::Json::array& config);
 
 	void fit(const std::vector<std::vector<uint8_t>>& X_train, const std::vector<uint32_t>& y_train, uint32_t batch_size);
 	void calculateTransform(

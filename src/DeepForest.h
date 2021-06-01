@@ -8,10 +8,13 @@
 #include <iostream>
 #include <cassert>
 
+#include "cuda_profiler_api.h"
+
 #include "ScanCascade.cuh"
 #include "CascadeLevel.cuh"
 #include "json11/json11.hpp"
 #include "Timer.h"
+#include "Logger.hpp"
 
 
 using std::vector;

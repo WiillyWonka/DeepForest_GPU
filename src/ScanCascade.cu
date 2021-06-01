@@ -8,6 +8,19 @@ ScanCascade::ScanCascade(
 	: scan_units(n_scan_units, ScanUnit(n_estimators, n_ferns, depth, win_size, stride))
 {}
 
+ScanCascade::ScanCascade(const json11::Json::array & config_array)
+{
+	scan_units.reserve(config_array.size());
+
+	for (auto& config : config_array)
+		scan_units.push_back(ScanUnit(
+			config["N Random Ferns"].int_value(),
+			config["N Ferns"].int_value(),
+			config["depth"].int_value(),
+			config["windows size"].int_value(),
+			config["stride"].int_value()));
+}
+
 
 void ScanCascade::fit(const vector<vector<uint8_t>>& data, const vector<uint32_t>& labels, uint32_t batch_size)
 {

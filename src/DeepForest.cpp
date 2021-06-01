@@ -1,14 +1,7 @@
 #include "DeepForest.h"
 
 DeepForest::DeepForest(const json11::Json& config)
-	: scan_cascade(
-		config["Scanning Cascade"]["size"].int_value(),
-		config["Scanning Cascade"]["N Random Ferns"].int_value(),
-		config["Scanning Cascade"]["N Ferns"].int_value(),
-		config["Scanning Cascade"]["depth"].int_value(),
-		config["Scanning Cascade"]["windows size"].int_value(),
-		config["Scanning Cascade"]["stride"].int_value()
-	)
+	: scan_cascade(config["Scanning Cascade"].array_items())
 {
 	if (!config["seed"].is_null())
 		srand(config["seed"].int_value());
@@ -36,7 +29,7 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	int batch_size)
 {
 	Timer general_timer;
-	std::cout << "Start Deep Forest fitting" << std::endl;
+	log_debug << "Start Deep Forest fitting" << std::endl;
 	general_timer.start();
 
 	n_classes = getClassNumber(y);
@@ -45,22 +38,22 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	scan_cascade.setClassesNumber(n_classes);
 	scan_cascade.setFeaturesNumber(n_features);
 
-	std::cout << "Fitting of scanning level..." << std::endl;
+	log_debug << "Fitting of scanning level..." << std::endl;
 
 	Timer timer;
 	timer.start();
 	scan_cascade.fit(X, y, batch_size);
 	timer.stop();
 
-	std::cout << "Fitting time: " << timer.elapsedSeconds() << std::endl;
+	log_debug << "Fitting time: " << timer.elapsedSeconds() << std::endl;
 
-	std::cout << "Calculating transformed features by scanning level..." << std::endl;
+	log_debug << "Calculating transformed features by scanning level..." << std::endl;
 
 	timer.start();
 	scan_cascade.calculateTransform(X, batch_size);
 	timer.stop();
 
-	std::cout << "Transformed features calculating time: " << timer.elapsedSeconds() << std::endl;
+	log_debug << "Transformed features calculating time: " << timer.elapsedSeconds() << std::endl;
 
 	double acc = DBL_MAX, prev_acc = 0;
 
@@ -68,8 +61,8 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	vector<vector<float>> transformed, proba;
 	vector<const vector<float>*> X_train, test_transformed;
 	vector<uint32_t> train_indices, test_indices, y_train, y_test;
-
-	while (fabs(acc - prev_acc) > tolerance) {
+	cudaProfilerStart();
+	while (fabs(acc - prev_acc) > tolerance && cascades.size() < 1) {
 		getKFoldIndices(train_indices, test_indices, y.size());
 		transformed = getLastTransformed();
 
@@ -80,7 +73,7 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 
 		getSubsetByIndices(transformed, y, train_indices, X_train, y_train);
 
-		std::cout << "Fitting of " << cascades.size() << "th cascade..." << std::endl;
+		log_debug << "Fitting of " << cascades.size() << "th cascade..." << std::endl;
 
 		try {
 			timer.start();
@@ -91,23 +84,23 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 			throw std::exception("Not enough memory on device");
 		}
 
-		std::cout << "Fitting of " << cascades.size() << "th cascade time: " << timer.elapsedSeconds() << std::endl;
+		log_debug << "Fitting of " << cascades.size() << "th cascade time: " << timer.elapsedSeconds() << std::endl;
 
-		std::cout << "Calculation transformed of " << cascades.size() << "th cascade..." << std::endl;
+		log_debug << "Calculation transformed of " << cascades.size() << "th cascade..." << std::endl;
 
 		try {
 			timer.start();
-			last_level.caluclateTransform(transformed, batch_size);
+			last_level.calculateTransform(transformed, batch_size);
 			timer.stop();
 		}
 		catch (thrust::system::detail::bad_alloc e) {
 			throw std::exception("Not enough memory on device");
 		}
 
-		std::cout << "Calculation transformed of " << cascades.size()
+		log_debug << "Calculation transformed of " << cascades.size()
 			<< "th cascade time: " << timer.elapsedSeconds() << std::endl;
 
-		std::cout << "Calculating current accuarcy..." << std::endl;
+		log_debug << "Calculating current accuarcy..." << std::endl;
 
 		try {
 			timer.start();
@@ -124,40 +117,36 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 		prev_acc = acc;
 		acc = accuracy(y_test, proba);
 		
-		std::cout << "Calculating current accuarcy time: " << timer.elapsedSeconds() << std::endl;		
-		std::cout << "Current accuarcy: " << acc << std::endl;
+		log_debug << "Calculating current accuarcy time: " << timer.elapsedSeconds() << std::endl;
+		log_debug << "Current accuarcy: " << acc << std::endl;
 		
 	}
-
-	scan_cascade.clearTransformed();
+	cudaProfilerStop();
+ 	scan_cascade.clearTransformed();
 
 	for (auto& cascade : cascades)
 		cascade.clearTranformed();
 
 	general_timer.stop();
-	std::cout << "Deep Forest fitting is over" << std::endl;
-	std::cout << "Fitting time: " << general_timer.elapsedSeconds() << std::endl;
+	log_debug << "Deep Forest fitting is over" << std::endl;
+	log_debug << "Fitting time: " << general_timer.elapsedSeconds() << std::endl;
 }
 
 vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& dataset, int batch_size)
 {
-	std::cout << "Prediction begins" << std::endl;
 	try {
-		std::cout << "Calculation scan level" << std::endl;
 		scan_cascade.calculateTransform(dataset, batch_size);
 
-		std::cout << "Calculation 1 cascade level" << std::endl;
-		cascades.front().caluclateTransform(scan_cascade.getTransformed(0), batch_size);
+		cascades.front().calculateTransform(scan_cascade.getTransformed(0), batch_size);
 		CascadeLevel* prev_cascade = &cascades.front();
 		
 		vector<vector<float>> last_transformed;
 		int cascade_idx = 1;
 		for (auto it = ++cascades.begin(); it != cascades.end(); it++) {
-			std::cout << "Calculation " << cascade_idx + 1 << " cascade level" << std::endl;
 			last_transformed = concatenate(prev_cascade->getTransfomed(),
 				scan_cascade.getTransformed(cascade_idx % scan_cascade.size()));
 			prev_cascade->clearTranformed();
-			it->caluclateTransform(last_transformed, batch_size);
+			it->calculateTransform(last_transformed, batch_size);
 			prev_cascade = &(*it);
 			cascade_idx++;
 		}
@@ -176,7 +165,6 @@ vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& dataset, int
 	catch (thrust::system::detail::bad_alloc e) {
 		throw std::exception("Not enough memory on device");
 	}
-	std::cout << "Prediction is over" << std::endl;
 }
 
 // This method get last cascade output and calculate probability for all samples

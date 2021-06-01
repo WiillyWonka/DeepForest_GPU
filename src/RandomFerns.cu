@@ -48,8 +48,11 @@ vector<vector<float>> RandomFerns::transformBatch(thrust::device_vector<float>& 
 
 	for (auto& fern : ferns) fern.transformBatch(data, proba, batch_size);
 
+	cudaDeviceSynchronize();
+
 	normalizeProba << < 1, batch_size >> > (raw_pointer_cast(proba.data()), n_classes);
 	gpuErrchk(cudaPeekAtLastError());
+	cudaDeviceSynchronize();
 
 	return unpackProba(proba);
 }
