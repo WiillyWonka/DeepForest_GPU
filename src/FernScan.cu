@@ -50,8 +50,8 @@ void processBatchKernelScan(
 
 	int idx = feature_idx[threadIdx.x];
 	int value, threshold = thresholds[threadIdx.x];
-	int x = window_idx % (width - win_size + 1);
-	int y = window_idx / (width - win_size + 1);
+	int x = window_idx % ((width - win_size) / stride + 1) * stride;
+	int y = window_idx / ((width - win_size) / stride + 1) * stride;
 
 	int data_idx = sample_idx * n_features + y * width + x + (idx / win_size) * width + idx % win_size;
 	value = data[data_idx];
@@ -79,7 +79,8 @@ void FernScan::processBatch(device_vector<uint8_t>& data, device_vector<uint32_t
 	float* hist = raw_pointer_cast(d_hist.data());
 	int batch_size = labels.size();
 	
-	int n_windows = (image_height - win_size + 1) * (image_width - win_size + 1) / stride / stride;
+	int n_windows = ((image_height - win_size) / stride + 1) *
+		((image_width - win_size) / stride + 1);
 	dim3 gridDim = dim3(n_windows, batch_size);
 
 	processBatchKernelScan << <gridDim, depth, depth * sizeof(char) >> >
@@ -112,8 +113,8 @@ void transformBatchKernelScan(
 	int idx = feature_idx[threadIdx.x];
 	int value, threshold = thresholds[threadIdx.x];
 
-	int x = window_idx % (width - win_size + 1);
-	int y = window_idx / (width - win_size + 1);
+	int x = window_idx % ((width - win_size) / stride + 1) * stride;
+	int y = window_idx / ((width - win_size) / stride + 1) * stride;
 	
 	int data_idx = sample_idx * n_features + y * width + x + (idx / win_size) * width + idx % win_size;
 	value = data[data_idx];
@@ -124,9 +125,10 @@ void transformBatchKernelScan(
 		for (int i = 0; i < depth; i++)
 			count = (count << 1) + temp[i];
 
-		int n_windows = (height - win_size + 1) * (width - win_size + 1) / stride / stride;
+		int n_windows = ((height - win_size) / stride + 1) *
+			((width - win_size) / stride + 1);
 		int sample_size = n_windows * n_classes;
-		int start_idx = sample_size * sample_idx + (x + y) * n_classes;
+		int start_idx = sample_size * sample_idx + window_idx * n_classes;
 		for (int i = 0; i < n_classes; i++)
 			atomicAdd(&transformed[start_idx + i], hist[(1 << depth) * i + count]);
 	}
@@ -142,7 +144,8 @@ void FernScan::transformBatch(device_vector<uint8_t>& data, device_vector<float>
 	int* thresholds = raw_pointer_cast(d_thresholds.data());
 	float* hist = raw_pointer_cast(d_hist.data());
 
-	int n_windows = (image_height - win_size + 1) * (image_width - win_size + 1) / stride / stride;
+	int n_windows = ((image_height - win_size) / stride + 1) *
+		((image_width - win_size) / stride + 1);
 	dim3 gridDim = dim3(n_windows, batch_size);
 
 	transformBatchKernelScan << <gridDim, depth, depth * sizeof(char) >> >
@@ -163,9 +166,14 @@ void FernScan::moveHost2Device()
 void FernScan::releaseDevice()
 {
 	h_hist = d_hist;
+
 	d_feature_idx.clear();
 	d_hist.clear();
 	d_thresholds.clear();
+
+	d_feature_idx.shrink_to_fit();
+	d_hist.shrink_to_fit();
+	d_thresholds.shrink_to_fit();
 }
 
 void FernScan::startFitting()

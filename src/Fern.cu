@@ -33,6 +33,7 @@ Fern::Fern(int n_classes, int n_features, int depth)
 
 void Fern::moveHost2Device()
 {
+	//cudaStreamCreate(&stream);
 	d_feature_idx = h_feature_idx;
 	d_hist = h_hist;
 	d_thresholds = h_thresholds;
@@ -41,6 +42,7 @@ void Fern::moveHost2Device()
 
 void Fern::releaseDevice()
 {
+	//cudaStreamDestroy(stream);
 	h_hist = d_hist;
 
 	d_feature_idx.clear();
@@ -101,7 +103,7 @@ void Fern::processBatch(device_vector<float>& data, device_vector<uint32_t>& lab
 	float* hist = raw_pointer_cast(d_hist.data());
 	uint32_t batch_size = labels.size();
 
-	processBatchKernel <<<batch_size, depth, depth * sizeof(char)>>> 
+	processBatchKernel <<<batch_size, depth, depth * sizeof(char) >>>
 		(data_ptr, labels_ptr, feature_idx, thresholds, hist, n_classes, n_features);
 	gpuErrchk(cudaPeekAtLastError());
 }
@@ -179,7 +181,7 @@ void Fern::normalizeHist()
 {
 	float* hist = raw_pointer_cast(d_hist.data());
 
-	int max_threads_per_block = 512;
+	int max_threads_per_block = 1024;
 	int n_threads = std::min(max_threads_per_block, static_cast<int>(d_hist.size() / n_classes));
 	for (int i = 0; i < d_hist.size() / n_classes; i += n_threads) {
 		n_threads = std::min(max_threads_per_block, static_cast<int>(d_hist.size() - i) / n_classes);

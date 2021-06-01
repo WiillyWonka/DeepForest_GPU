@@ -46,7 +46,7 @@ void CascadeLevel::fit(
 	endFitting();
 }
 
-void CascadeLevel::caluclateTransform(const vector<vector<float>>& data, uint32_t batch_size)
+void CascadeLevel::calculateTransform(const vector<vector<float>>& data, uint32_t batch_size)
 {
 	moveHost2Device();
 

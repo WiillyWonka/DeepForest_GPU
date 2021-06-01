@@ -11,7 +11,7 @@ public:
 	CascadeLevel(int n_estimators, int n_ferns, int depth, int n_classes, int n_features);
 	void fit(const std::vector<const std::vector<float>*>& data,
 		const std::vector<uint32_t>& label, uint32_t batch_size);
-	void caluclateTransform(const std::vector<std::vector<float>>& data, uint32_t batch_size);
+	void calculateTransform(const std::vector<std::vector<float>>& data, uint32_t batch_size);
 	const std::vector<std::vector<float>>& getTransfomed() const;
 	void clearTranformed();
 	size_t size() const { return random_ferns.size(); };
