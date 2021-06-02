@@ -34,4 +34,5 @@ private:
 	thrust::device_vector<int> d_feature_idx;
 	thrust::host_vector<float> h_thresholds, h_hist;
 	thrust::device_vector<float> d_thresholds, d_hist;
+	cudaStream_t stream;
 };

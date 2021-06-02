@@ -56,7 +56,7 @@ private:
 private:
 	ScanCascade scan_cascade;
 	std::list<CascadeLevel> cascades;
-	int n_classes, n_features, k = 5, n_random_ferns, n_ferns, depth;
+	int n_classes, n_features, k = 5, n_random_ferns, n_ferns, depth, cascade_size;
 	double tolerance = 0.001;
 };
 

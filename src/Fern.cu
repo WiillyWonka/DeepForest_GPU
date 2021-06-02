@@ -33,7 +33,7 @@ Fern::Fern(int n_classes, int n_features, int depth)
 
 void Fern::moveHost2Device()
 {
-	//cudaStreamCreate(&stream);
+	cudaStreamCreate(&stream);
 	d_feature_idx = h_feature_idx;
 	d_hist = h_hist;
 	d_thresholds = h_thresholds;
@@ -42,8 +42,10 @@ void Fern::moveHost2Device()
 
 void Fern::releaseDevice()
 {
-	//cudaStreamDestroy(stream);
-	h_hist = d_hist;
+	h_hist = thrust::host_vector<float>(d_hist.size());
+	//thrust::copy(thrust::cuda::par.on(stream), d_hist.begin(), d_hist.end(), h_hist.begin());
+	cudaMemcpyAsync(thrust::raw_pointer_cast(h_hist.data()), thrust::raw_pointer_cast(d_hist.data()),
+		d_hist.size() * sizeof(float), cudaMemcpyDeviceToHost, stream);
 
 	d_feature_idx.clear();
 	d_hist.clear();
@@ -52,6 +54,8 @@ void Fern::releaseDevice()
 	d_feature_idx.shrink_to_fit();
 	d_hist.shrink_to_fit();
 	d_thresholds.shrink_to_fit();
+	cudaStreamSynchronize(stream);
+	cudaStreamDestroy(stream);
 }
 
 void Fern::startFitting()
@@ -103,7 +107,7 @@ void Fern::processBatch(device_vector<float>& data, device_vector<uint32_t>& lab
 	float* hist = raw_pointer_cast(d_hist.data());
 	uint32_t batch_size = labels.size();
 
-	processBatchKernel <<<batch_size, depth, depth * sizeof(char) >>>
+	processBatchKernel <<<batch_size, depth, depth * sizeof(char), stream >>>
 		(data_ptr, labels_ptr, feature_idx, thresholds, hist, n_classes, n_features);
 	gpuErrchk(cudaPeekAtLastError());
 }
@@ -147,7 +151,7 @@ void Fern::transformBatch(
 	float* thresholds = raw_pointer_cast(d_thresholds.data());
 	float* hist = raw_pointer_cast(d_hist.data());
 
-	transformBatchKernel << <batch_size, depth, depth * sizeof(char) >> >
+	transformBatchKernel << <batch_size, depth, depth * sizeof(char), stream >> >
 		(data_ptr, proba_ptr, feature_idx, thresholds, hist, n_classes, n_features);
 }
 
@@ -185,7 +189,7 @@ void Fern::normalizeHist()
 	int n_threads = std::min(max_threads_per_block, static_cast<int>(d_hist.size() / n_classes));
 	for (int i = 0; i < d_hist.size() / n_classes; i += n_threads) {
 		n_threads = std::min(max_threads_per_block, static_cast<int>(d_hist.size() - i) / n_classes);
-		normalizeHistKernel <<<1, n_threads >>> (hist, n_classes, i, depth);
+		normalizeHistKernel <<<1, n_threads, 0, stream >>> (hist, n_classes, i, depth);
 	}
 
 	gpuErrchk(cudaPeekAtLastError());
