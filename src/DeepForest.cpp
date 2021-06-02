@@ -7,6 +7,11 @@ DeepForest::DeepForest(const json11::Json& config)
 		srand(config["seed"].int_value());
 	else
 		srand(time(0));
+
+	if (!config["cascade size"].is_null())
+		cascade_size = config["cascade size"].int_value();
+	else
+		cascade_size = 5;
 	
 	if (config["Cascade"]["N Random Ferns"].is_null())
 		n_random_ferns = 1;
@@ -62,7 +67,7 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	vector<const vector<float>*> X_train, test_transformed;
 	vector<uint32_t> train_indices, test_indices, y_train, y_test;
 	cudaProfilerStart();
-	while (fabs(acc - prev_acc) > tolerance && cascades.size() < 1) {
+	while (fabs(acc - prev_acc) > tolerance && cascades.size() < cascade_size) {
 		getKFoldIndices(train_indices, test_indices, y.size());
 		transformed = getLastTransformed();
 
