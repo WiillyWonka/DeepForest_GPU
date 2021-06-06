@@ -24,7 +24,7 @@ RandomFerns::RandomFerns(int n_classes, int n_features, int n_estimators, int de
 void RandomFerns::processBatch(device_vector<float>& data, device_vector<uint32_t>& labels)
 {
 	for (auto& fern : ferns) fern.processBatch(data, labels);
-	gpuErrchk(cudaDeviceSynchronize());
+	//gpuErrchk(cudaDeviceSynchronize());
 	//ferns[0].printValue();
 }
 

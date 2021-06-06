@@ -19,8 +19,8 @@ Fern::Fern(int n_classes, int n_features, int depth)
 	, n_classes(n_classes)
 	, n_features(n_features)
 	, h_feature_idx(depth)
-	, h_hist((1 << depth)* n_classes, 1)
 	, h_thresholds(depth)
+	, h_hist((1 << depth)* n_classes)
 {
 	std::generate(h_feature_idx.begin(), h_feature_idx.end(),
 		[=]() { return rand() % n_features; });
@@ -37,36 +37,36 @@ void Fern::moveHost2Device()
 	d_feature_idx = h_feature_idx;
 	d_hist = h_hist;
 	d_thresholds = h_thresholds;
-	h_hist.clear();
 }
 
 void Fern::releaseDevice()
 {
-	h_hist = thrust::host_vector<float>(d_hist.size());
-	//thrust::copy(thrust::cuda::par.on(stream), d_hist.begin(), d_hist.end(), h_hist.begin());
-	cudaMemcpyAsync(thrust::raw_pointer_cast(h_hist.data()), thrust::raw_pointer_cast(d_hist.data()),
-		d_hist.size() * sizeof(float), cudaMemcpyDeviceToHost, stream);
-
 	d_feature_idx.clear();
-	d_hist.clear();
 	d_thresholds.clear();
-
 	d_feature_idx.shrink_to_fit();
-	d_hist.shrink_to_fit();
 	d_thresholds.shrink_to_fit();
+
+
 	cudaStreamSynchronize(stream);
+	d_hist.clear();
+	d_hist.shrink_to_fit();
+
 	cudaStreamDestroy(stream);
 }
 
 void Fern::startFitting()
 {
-	moveHost2Device();
+	cudaStreamCreate(&stream);
+	d_feature_idx = h_feature_idx;
+	d_thresholds = h_thresholds;
+	d_hist = device_vector<float>((1 << depth) * n_classes, 1);
 }
 
 void Fern::endFitting()
 {
 	normalizeHist();
-	releaseDevice();
+	cudaMemcpyAsync(thrust::raw_pointer_cast(h_hist.data()), thrust::raw_pointer_cast(d_hist.data()),
+		d_hist.size() * sizeof(float), cudaMemcpyDeviceToHost, stream);
 }
 
 

@@ -8,6 +8,8 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
+#include "utils.h"
+
 class Fern
 {
 public:
@@ -30,9 +32,9 @@ private:
 private:
 	int depth, n_classes, n_features;
 	double min_feature = 0, max_feature = 1;
-	thrust::host_vector<int> h_feature_idx;
+	p_vector<int> h_feature_idx;
 	thrust::device_vector<int> d_feature_idx;
-	thrust::host_vector<float> h_thresholds, h_hist;
+	p_vector<float>	h_thresholds, h_hist;
 	thrust::device_vector<float> d_thresholds, d_hist;
 	cudaStream_t stream;
 };

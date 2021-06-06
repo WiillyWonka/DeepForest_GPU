@@ -22,7 +22,7 @@ ScanCascade::ScanCascade(const json11::Json::array & config_array)
 }
 
 
-void ScanCascade::fit(const vector<vector<uint8_t>>& data, const vector<uint32_t>& labels, uint32_t batch_size)
+void ScanCascade::fit(const vector<p_vector<uint8_t>>& data, const p_vector<uint32_t>& labels, uint32_t batch_size)
 {
 	for (auto& unit : scan_units) unit.startFitting();
 
@@ -43,9 +43,10 @@ void ScanCascade::fit(const vector<vector<uint8_t>>& data, const vector<uint32_t
 	}
 
 	for (auto& unit : scan_units) unit.endFitting();
+	for (auto& unit : scan_units) unit.releaseDevice();
 }
 
-void ScanCascade::calculateTransform(const vector<vector<uint8_t>>& data, uint32_t batch_size)
+void ScanCascade::calculateTransform(const vector<p_vector<uint8_t>>& data, uint32_t batch_size)
 {
 	for (auto& unit : scan_units)
 		unit.calculateTransform(data, batch_size);
@@ -57,7 +58,7 @@ void ScanCascade::clearTransformed()
 		unit.clearTransformed();
 }
 
-const vector<vector<float>>& ScanCascade::getTransformed(uint32_t index) const
+const vector<p_vector<float>>& ScanCascade::getTransformed(uint32_t index) const
 {
 	return scan_units[index].getTranformed();
 }
@@ -75,7 +76,7 @@ void ScanCascade::setFeaturesNumber(uint32_t n_features)
 
 
 device_vector<uint32_t> ScanCascade::packBatch(
-	const vector<uint32_t>& in,
+	const p_vector<uint32_t>& in,
 	uint32_t batch_size,
 	uint32_t start_idx)
 {
@@ -85,7 +86,7 @@ device_vector<uint32_t> ScanCascade::packBatch(
 }
 
 device_vector<uint8_t> ScanCascade::packBatch(
-	const vector<vector<uint8_t>>& in,
+	const vector<p_vector<uint8_t>>& in,
 	uint32_t batch_size,
 	uint32_t start_idx)
 {

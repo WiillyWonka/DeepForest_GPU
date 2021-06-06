@@ -29,7 +29,7 @@ DeepForest::DeepForest(const json11::Json& config)
 		depth = config["Cascade"]["depth"].int_value();
 }
 
-void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y,
+void DeepForest::fit(const vector<p_vector<uint8_t>>& X, const p_vector<uint32_t>& y,
 	int img_height, int img_width,
 	int batch_size)
 {
@@ -63,10 +63,12 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	double acc = DBL_MAX, prev_acc = 0;
 
 	
-	vector<vector<float>> transformed, proba;
-	vector<const vector<float>*> X_train, test_transformed;
-	vector<uint32_t> train_indices, test_indices, y_train, y_test;
-	cudaProfilerStart();
+	vector<p_vector<float>> transformed;
+	vector<vector<float>> proba;
+	vector<const p_vector<float>*> X_train, test_transformed;
+	vector<uint32_t> train_indices, test_indices;
+	p_vector<uint32_t> y_train, y_test;
+
 	while (fabs(acc - prev_acc) > tolerance && cascades.size() < cascade_size) {
 		getKFoldIndices(train_indices, test_indices, y.size());
 		transformed = getLastTransformed();
@@ -137,7 +139,7 @@ void DeepForest::fit(const vector<vector<uint8_t>>& X, const vector<uint32_t>& y
 	log_debug << "Fitting time: " << general_timer.elapsedSeconds() << std::endl;
 }
 
-vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& dataset, int batch_size)
+vector<uint32_t> DeepForest::predict(const vector<p_vector<uint8_t>>& dataset, int batch_size)
 {
 	try {
 		scan_cascade.calculateTransform(dataset, batch_size);
@@ -145,7 +147,7 @@ vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& dataset, int
 		cascades.front().calculateTransform(scan_cascade.getTransformed(0), batch_size);
 		CascadeLevel* prev_cascade = &cascades.front();
 		
-		vector<vector<float>> last_transformed;
+		vector<p_vector<float>> last_transformed;
 		int cascade_idx = 1;
 		for (auto it = ++cascades.begin(); it != cascades.end(); it++) {
 			last_transformed = concatenate(prev_cascade->getTransfomed(),
@@ -173,7 +175,7 @@ vector<uint32_t> DeepForest::predict(const vector<vector<uint8_t>>& dataset, int
 }
 
 // This method get last cascade output and calculate probability for all samples
-vector<vector<float>> DeepForest::probaAveraging(const vector<vector<float>>& last_output)
+vector<vector<float>> DeepForest::probaAveraging(const vector<p_vector<float>>& last_output)
 {
 	vector<vector<float>> out(last_output.size());
 	for (int i = 0; i < last_output.size(); i++) {
@@ -189,7 +191,7 @@ vector<vector<float>> DeepForest::probaAveraging(const vector<vector<float>>& la
 	return out;
 }
 
-vector<vector<float>> DeepForest::probaAveraging(const vector<const vector<float>*>& last_output)
+vector<vector<float>> DeepForest::probaAveraging(const vector<const p_vector<float>*>& last_output)
 {
 	size_t output_size = last_output[0]->size();
 	vector<vector<float>> out(last_output.size());
@@ -232,10 +234,10 @@ void DeepForest::getKFoldIndices(
 }
 
 void DeepForest::getSubsetByIndices(
-	const vector<vector<float>>& X_in, const vector<uint32_t>& y_in, const vector<uint32_t>& indices,
-	vector<const vector<float>*>& X_out, vector<uint32_t>& y_out)
+	const vector<p_vector<float>>& X_in, const p_vector<uint32_t>& y_in, const vector<uint32_t>& indices,
+	vector<const p_vector<float>*>& X_out, p_vector<uint32_t>& y_out)
 {
-	X_out = vector<const vector<float>*>(indices.size());
+	X_out = vector<const p_vector<float>*>(indices.size());
 	y_out = vector<uint32_t>(indices.size());
 
 	uint32_t index;
@@ -246,24 +248,25 @@ void DeepForest::getSubsetByIndices(
 	}
 }
 
-vector<vector<float>> DeepForest::getLastTransformed()
+vector<p_vector<float>> DeepForest::getLastTransformed()
 {
 	if (cascades.size() == 0) return scan_cascade.getTransformed(0);
 
-	const vector<vector<float>>& scan_transformed =
+	const vector<p_vector<float>>& scan_transformed =
 		scan_cascade.getTransformed(cascades.size() % scan_cascade.size());
 	
-	const vector<vector<float>>& last_transformed = cascades.back().getTransfomed();
+	const vector<p_vector<float>>& last_transformed = cascades.back().getTransfomed();
 
 	return concatenate(last_transformed, scan_transformed);
 }
 
-vector<vector<float>> DeepForest::concatenate(const vector<vector<float>>& first, const vector<vector<float>> second)
+vector<p_vector<float>> DeepForest::concatenate(
+	const vector<p_vector<float>>& first, const vector<p_vector<float>> second)
 {
 	assert(first.size() == second.size() &&
 		"Size of input arrays is not equal");
 
-	vector<vector<float>> out(first.size());
+	vector<p_vector<float>> out(first.size());
 
 	for (uint32_t j = 0; j < out.size(); j++) {
 		out[j] = vector<float>(first[j].size() + second[j].size());
@@ -275,12 +278,12 @@ vector<vector<float>> DeepForest::concatenate(const vector<vector<float>>& first
 	return out;
 }
 
-uint32_t DeepForest::getClassNumber(const vector<uint32_t>& labels)
+uint32_t DeepForest::getClassNumber(const p_vector<uint32_t>& labels)
 {
 	return *std::max_element(labels.begin(), labels.end()) + 1;
 }
 
-double DeepForest::accuracy(vector<uint32_t>& label, vector<vector<float>>& proba)
+double DeepForest::accuracy(p_vector<uint32_t>& label, vector<vector<float>>& proba)
 {
 	assert(label.size() == proba.size() &&
 		"proba size should be equal label size");
