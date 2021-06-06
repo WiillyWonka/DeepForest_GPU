@@ -20,8 +20,8 @@ CascadeLevel::CascadeLevel(int n_estimators, int n_ferns, int depth, int n_class
 }
 
 void CascadeLevel::fit(
-	const std::vector<const std::vector<float>*>& data,
-	const std::vector<uint32_t>& labels,
+	const vector<const p_vector<float>*>& data,
+	const p_vector<uint32_t>& labels,
 	uint32_t batch_size)
 {
 	startFitting();
@@ -46,12 +46,12 @@ void CascadeLevel::fit(
 	endFitting();
 }
 
-void CascadeLevel::calculateTransform(const vector<vector<float>>& data, uint32_t batch_size)
+void CascadeLevel::calculateTransform(const vector<p_vector<float>>& data, uint32_t batch_size)
 {
 	moveHost2Device();
 
 	device_vector<float> data_batch;
-	transformed = vector<vector<float>>(data.size());
+	transformed = vector<p_vector<float>>(data.size());
 	vector<vector<vector<float>>> buffer(random_ferns.size());
 
 	uint32_t current_size;
@@ -70,7 +70,7 @@ void CascadeLevel::calculateTransform(const vector<vector<float>>& data, uint32_
 	releaseDevice();
 }
 
-const std::vector<std::vector<float>>& CascadeLevel::getTransfomed() const
+const vector<p_vector<float>>& CascadeLevel::getTransfomed() const
 {
 	return transformed;
 }
@@ -98,10 +98,11 @@ void CascadeLevel::startFitting()
 void CascadeLevel::endFitting()
 {
 	for (auto& random_fern : random_ferns) random_fern.endFitting();
+	for (auto& random_fern : random_ferns) random_fern.releaseDevice();
 }
 
 device_vector<uint32_t> CascadeLevel::packBatch(
-	const vector<uint32_t>& in,
+	const p_vector<uint32_t>& in,
 	uint32_t start_idx,
 	uint32_t batch_size)
 {
@@ -110,7 +111,7 @@ device_vector<uint32_t> CascadeLevel::packBatch(
 	return out;
 }
 
-void CascadeLevel::unpackTransformed(vector<vector<float>>& transformed,
+void CascadeLevel::unpackTransformed(vector<p_vector<float>>& transformed,
 	vector<vector<vector<float>>> buffer, int start_idx, int batch_size)
 {
 	for (int i = 0; i < batch_size; i++) {
@@ -124,7 +125,7 @@ void CascadeLevel::unpackTransformed(vector<vector<float>>& transformed,
 }
 
 device_vector<float> CascadeLevel::packBatch(
-	const vector<vector<float>>& in,
+	const vector<p_vector<float>>& in,
 	uint32_t start_idx,
 	uint32_t batch_size)
 {
@@ -143,7 +144,7 @@ device_vector<float> CascadeLevel::packBatch(
 }
 
 device_vector<float> CascadeLevel::packBatch(
-	const vector<const vector<float>*>& in,
+	const vector<const p_vector<float>*>& in,
 	uint32_t start_idx,
 	uint32_t batch_size)
 {

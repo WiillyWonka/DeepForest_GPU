@@ -15,6 +15,7 @@
 #include "json11/json11.hpp"
 #include "Timer.h"
 #include "Logger.hpp"
+#include "utils.h"
 
 
 using std::vector;
@@ -24,15 +25,15 @@ class DeepForest
 public:
 	DeepForest(const json11::Json& config);
 
-	void fit(const std::vector<std::vector<uint8_t>>& X_train, const std::vector<uint32_t>& y_train,
+	void fit(const vector<p_vector<uint8_t>>& X_train, const p_vector<uint32_t>& y_train,
 		int img_height, int img_width, int batch_size);
-	std::vector<uint32_t> predict(const std::vector<std::vector<uint8_t>>& X_test, int batch_size);
+	std::vector<uint32_t> predict(const std::vector<p_vector<uint8_t>>& X_test, int batch_size);
 
 private:
-	vector<uint32_t> predict(const vector<const vector<uint8_t>*>& X_test, int batch_size);
+	vector<uint32_t> predict(const vector<const p_vector<uint8_t>*>& X_test, int batch_size);
 
-	vector<vector<float>> probaAveraging(const vector<vector<float>>& last_output);
-	vector<vector<float>> probaAveraging(const vector<const vector<float>*>& last_output);
+	vector<vector<float>> probaAveraging(const vector<p_vector<float>>& last_output);
+	vector<vector<float>> probaAveraging(const vector<const p_vector<float>*>& last_output);
 
 	void getKFoldIndices(
 		vector<uint32_t>& train_indices,
@@ -40,18 +41,18 @@ private:
 		size_t dataset_size);
 
 	void getSubsetByIndices(
-		const vector<vector<float>>& X_in,
-		const vector<uint32_t>& y_in,
+		const vector<p_vector<float>>& X_in,
+		const p_vector<uint32_t>& y_in,
 		const vector<uint32_t>& indices,
-		vector<const vector<float>*>& X_out,
-		vector<uint32_t>& y_out);
+		vector<const p_vector<float>*>& X_out,
+		p_vector<uint32_t>& y_out);
 
-	vector<vector<float>> getLastTransformed();
-	vector<vector<float>> concatenate(const vector<vector<float>>& first, const vector<vector<float>> second);
+	vector<p_vector<float>> getLastTransformed();
+	vector<p_vector<float>> concatenate(const vector<p_vector<float>>& first, const vector<p_vector<float>> second);
 
-	uint32_t getClassNumber(const vector<uint32_t>& labels);
+	uint32_t getClassNumber(const p_vector<uint32_t>& labels);
 
-	double accuracy(vector<uint32_t>& label, vector<vector<float>>& proba);
+	double accuracy(p_vector<uint32_t>& label, vector<vector<float>>& proba);
 
 private:
 	ScanCascade scan_cascade;

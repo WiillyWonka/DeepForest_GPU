@@ -83,7 +83,7 @@ void FernScan::processBatch(device_vector<uint8_t>& data, device_vector<uint32_t
 		((image_width - win_size) / stride + 1);
 	dim3 gridDim = dim3(n_windows, batch_size);
 
-	processBatchKernelScan << <gridDim, depth, depth * sizeof(char) >> >
+	processBatchKernelScan << <gridDim, depth, depth * sizeof(char), stream >> >
 		(data_ptr, labels_ptr, feature_idx, thresholds, hist, n_classes, n_features,
 			win_size, stride, image_height, image_width);
 
@@ -130,7 +130,7 @@ void transformBatchKernelScan(
 		int sample_size = n_windows * n_classes;
 		int start_idx = sample_size * sample_idx + window_idx * n_classes;
 		for (int i = 0; i < n_classes; i++)
-			atomicAdd(&transformed[start_idx + i], hist[(1 << depth) * i + count]);
+			transformed[start_idx + i] += hist[(1 << depth) * i + count];
 	}
 	__syncthreads();
 
@@ -148,7 +148,7 @@ void FernScan::transformBatch(device_vector<uint8_t>& data, device_vector<float>
 		((image_width - win_size) / stride + 1);
 	dim3 gridDim = dim3(n_windows, batch_size);
 
-	transformBatchKernelScan << <gridDim, depth, depth * sizeof(char) >> >
+	transformBatchKernelScan << <gridDim, depth, depth * sizeof(char), stream >> >
 		(data_ptr, transformed_ptr, feature_idx, thresholds, hist, n_classes, n_features,
 			win_size, stride, image_height, image_width);
 
@@ -157,45 +157,47 @@ void FernScan::transformBatch(device_vector<uint8_t>& data, device_vector<float>
 
 void FernScan::moveHost2Device()
 {
+	cudaStreamCreate(&stream);
 	d_feature_idx = h_feature_idx;
 	d_hist = h_hist;
 	d_thresholds = h_thresholds;
-	h_hist.clear();
 }
 
 void FernScan::releaseDevice()
 {
-	h_hist = d_hist;
-
 	d_feature_idx.clear();
-	d_hist.clear();
 	d_thresholds.clear();
-
 	d_feature_idx.shrink_to_fit();
-	d_hist.shrink_to_fit();
 	d_thresholds.shrink_to_fit();
+
+
+	cudaStreamSynchronize(stream);
+	d_hist.clear();
+	d_hist.shrink_to_fit();
+
+	cudaStreamDestroy(stream);
 }
 
 void FernScan::startFitting()
 {
+	cudaStreamCreate(&stream);
 	d_feature_idx = h_feature_idx;
-	d_hist = device_vector<float>((1 << depth) * n_classes, 1);
 	d_thresholds = h_thresholds;
-	h_hist.clear();
+	d_hist = device_vector<float>((1 << depth) * n_classes, 1);
 }
 
 void FernScan::endFitting()
 {
 	normalizeHist();
-	h_hist = d_hist;
-	d_feature_idx.clear();
-	d_hist.clear();
-	d_thresholds.clear();
+	cudaMemcpyAsync(thrust::raw_pointer_cast(h_hist.data()), thrust::raw_pointer_cast(d_hist.data()),
+		d_hist.size() * sizeof(float), cudaMemcpyDeviceToHost, stream);
+	gpuErrchk(cudaPeekAtLastError());
 }
 
 void FernScan::setClassesNumber(uint32_t n_classes)
 {
 	this->n_classes = n_classes;
+	h_hist = p_vector<float>((1 << depth) * n_classes);
 }
 
 void FernScan::setFeaturesNumber(uint32_t n_features)
@@ -217,11 +219,11 @@ void FernScan::normalizeHist()
 {
 	float* hist = raw_pointer_cast(d_hist.data());
 
-	int max_threads_per_block = 512;
+	int max_threads_per_block = 1024;
 	int n_threads = std::min(max_threads_per_block, static_cast<int>(d_hist.size() / n_classes));
 	for (int i = 0; i < d_hist.size() / n_classes; i += n_threads) {
 		n_threads = std::min(max_threads_per_block, static_cast<int>((d_hist.size() - i) / n_classes));
-		normalizeHistScanKernel << <1, n_threads >> > (hist, n_classes, i, depth);
+		normalizeHistScanKernel << <1, n_threads, 0, stream >> > (hist, n_classes, i, depth);
 	}
 
 	gpuErrchk(cudaPeekAtLastError());

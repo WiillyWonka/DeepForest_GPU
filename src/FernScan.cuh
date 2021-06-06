@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <iostream>
 
+#include "utils.h"
+
 class FernScan
 {
 public:
@@ -33,10 +35,11 @@ private:
 	void normalizeHist();
 private:
 	uint32_t depth, n_classes, n_features, win_size, stride;
-	uint32_t image_width = 28, image_height = 28; //TODO: remove hardcode
+	uint32_t image_width = 28, image_height = 28;
 	uint8_t min_feature = 0, max_feature = 255;
-	thrust::host_vector<int> h_feature_idx, h_thresholds;
-	thrust::host_vector<float> h_hist;
+	p_vector<int> h_feature_idx, h_thresholds;
+	p_vector<float> h_hist;
 	thrust::device_vector<int> d_feature_idx, d_thresholds;
 	thrust::device_vector<float> d_hist;
+	cudaStream_t stream;
 };

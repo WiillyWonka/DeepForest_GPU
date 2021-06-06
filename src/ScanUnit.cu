@@ -16,11 +16,11 @@ void ScanUnit::processBatch(thrust::device_vector<uint8_t>& data_batch, thrust::
 		random_fern.processBatch(data_batch, label_batch);
 }
 
-void ScanUnit::calculateTransform(const vector<vector<uint8_t>>& data, uint32_t batch_size)
+void ScanUnit::calculateTransform(const vector<p_vector<uint8_t>>& data, uint32_t batch_size)
 {
 	moveHost2Device();
 
-	transformed = vector<vector<float>>(data.size());
+	transformed = vector<p_vector<float>>(data.size());
 	device_vector<uint8_t> data_batch;
 	vector<device_vector<float>> buffer(random_ferns.size());
 	uint32_t current_size;
@@ -44,7 +44,7 @@ void ScanUnit::clearTransformed()
 	transformed.clear();
 }
 
-const std::vector<std::vector<float>>& ScanUnit::getTranformed() const
+const vector<p_vector<float>>& ScanUnit::getTranformed() const
 {
 	return transformed;
 }
@@ -82,7 +82,7 @@ void ScanUnit::setFeaturesNumber(uint32_t n_features)
 }
 
 device_vector<uint8_t> ScanUnit::packBatch(
-	const vector<vector<uint8_t>>& in,
+	const vector<p_vector<uint8_t>>& in,
 	uint32_t batch_size,
 	uint32_t start_idx)
 {
@@ -100,7 +100,7 @@ device_vector<uint8_t> ScanUnit::packBatch(
 }
 
 void ScanUnit::unpackTransformed(
-	vector<vector<float>>& dst,
+	vector<p_vector<float>>& dst,
 	vector<device_vector<float>>& src, 
 	uint32_t batch_size,
 	int index)
